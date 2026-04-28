@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HEPTA CCR Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="loginView" class="login-wrapper">
+      <div class="card login-card shadow">
+        <div class="card-body p-4">
+          <h4 class="mb-3">HEPTA CCR Login</h4>
+          <p class="text-muted">Default admin: admin@hepta.local / admin123</p>
+          <div class="mb-3"><input id="email" class="form-control" placeholder="Email" value="admin@hepta.local" /></div>
+          <div class="mb-3"><input id="password" type="password" class="form-control" placeholder="Password" value="admin123" /></div>
+          <button id="loginBtn" class="btn btn-primary w-100">Login</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="appView" class="d-none">
+      <div class="layout">
+        <aside id="sidebar" class="sidebar">
+          <div class="sidebar-brand"><i class="bi bi-headset"></i> <span>HEPTA CCR</span></div>
+          <button class="menu-item active" data-section="dashboard"><i class="bi bi-speedometer2"></i> Dashboard</button>
+          <button class="menu-item" data-section="cdr"><i class="bi bi-telephone"></i> CDR Explorer</button>
+          <button class="menu-item" data-section="agents"><i class="bi bi-person-badge"></i> Agents</button>
+          <button class="menu-item" data-section="users"><i class="bi bi-people"></i> Users</button>
+          <button class="menu-item" data-section="import"><i class="bi bi-upload"></i> Import Data</button>
+          <button class="menu-item" data-section="export"><i class="bi bi-download"></i> Export Data</button>
+          <button class="menu-item" data-section="settings"><i class="bi bi-gear"></i> Settings</button>
+        </aside>
+
+        <main class="content-area">
+          <header class="topbar">
+            <button id="toggleSidebar" class="btn btn-outline-secondary btn-sm"><i class="bi bi-list"></i></button>
+            <div class="d-flex gap-2">
+              <button id="darkModeBtn" class="btn btn-outline-secondary btn-sm"><i class="bi bi-moon"></i> Dark</button>
+              <button id="logoutBtn" class="btn btn-outline-danger btn-sm"><i class="bi bi-box-arrow-right"></i> Logout</button>
+            </div>
+          </header>
+
+          <section id="dashboardSection" class="app-section">
+            <div class="row g-3 mb-3">
+              <div class="col-md-3"><input type="date" id="startDate" class="form-control" /></div>
+              <div class="col-md-3"><input type="date" id="endDate" class="form-control" /></div>
+              <div class="col-md-3"><button id="refreshDashboard" class="btn btn-primary w-100">Refresh Dashboard</button></div>
+              <div class="col-md-3"><button id="generateMock" class="btn btn-outline-secondary w-100">Generate Mock Calls</button></div>
+            </div>
+            <div class="row g-3 mb-3">
+              <div class="col-md-6 col-lg-3"><div class="card stat-card"><div class="card-body"><small>Total Calls</small><h3 id="totalCalls">0</h3></div></div></div>
+              <div class="col-md-6 col-lg-3"><div class="card stat-card"><div class="card-body"><small>Avg Duration</small><h3 id="avgDuration">0</h3></div></div></div>
+              <div class="col-md-6 col-lg-3"><div class="card stat-card"><div class="card-body"><small>Answered / Missed</small><h3 id="answeredMissed">0 / 0</h3></div></div></div>
+              <div class="col-md-6 col-lg-3"><div class="card stat-card"><div class="card-body"><small>Top Agent</small><h3 id="topAgent">-</h3></div></div></div>
+            </div>
+            <div class="row g-3">
+              <div class="col-lg-6"><div class="card"><div class="card-header">Calls per Day</div><div class="card-body"><canvas id="callsPerDayChart"></canvas></div></div></div>
+              <div class="col-lg-6"><div class="card"><div class="card-header">Calls per Agent</div><div class="card-body"><canvas id="callsPerAgentChart"></canvas></div></div></div>
+              <div class="col-lg-6"><div class="card"><div class="card-header">Status Distribution</div><div class="card-body"><canvas id="statusChart"></canvas></div></div></div>
+              <div class="col-lg-6"><div class="card"><div class="card-header">Calls by Hour</div><div class="card-body"><canvas id="hourChart"></canvas></div></div></div>
+            </div>
+          </section>
+
+          <section id="cdrSection" class="app-section d-none">
+            <div class="card"><div class="card-body">
+              <div class="row g-2 mb-2">
+                <div class="col-md-2"><input type="date" id="cdrStart" class="form-control" /></div>
+                <div class="col-md-2"><input type="date" id="cdrEnd" class="form-control" /></div>
+                <div class="col-md-2"><input type="text" id="cdrAgent" class="form-control" placeholder="Agent" /></div>
+                <div class="col-md-2"><select id="cdrStatus" class="form-select"><option value="">All status</option><option>answered</option><option>missed</option><option>busy</option></select></div>
+                <div class="col-md-2"><input type="text" id="cdrSearch" class="form-control" placeholder="Search" /></div>
+                <div class="col-md-2"><button id="cdrFilterBtn" class="btn btn-primary w-100">Apply</button></div>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-striped" id="cdrTable">
+                  <thead><tr>
+                    <th data-sort="call_date">Date</th><th data-sort="source">Source</th><th data-sort="destination">Destination</th>
+                    <th data-sort="duration">Duration</th><th data-sort="status">Status</th><th data-sort="agent">Agent</th>
+                  </tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="d-flex justify-content-between align-items-center">
+                <button id="prevPage" class="btn btn-outline-secondary btn-sm">Prev</button>
+                <span id="cdrPageInfo">Page 1</span>
+                <button id="nextPage" class="btn btn-outline-secondary btn-sm">Next</button>
+              </div>
+            </div></div>
+          </section>
+
+          <section id="agentsSection" class="app-section d-none"><div class="card"><div class="card-body">
+            <div class="d-flex justify-content-between mb-2"><h5>Agents</h5><button id="addAgentBtn" class="btn btn-sm btn-primary">Add Agent</button></div>
+            <div class="table-responsive"><table class="table"><thead><tr><th>Name</th><th>Extension</th><th>Action</th></tr></thead><tbody id="agentsTable"></tbody></table></div>
+          </div></div></section>
+
+          <section id="usersSection" class="app-section d-none"><div class="card"><div class="card-body">
+            <div class="d-flex justify-content-between mb-2"><h5>Users</h5><button id="addUserBtn" class="btn btn-sm btn-primary">Create User</button></div>
+            <div class="table-responsive"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Created</th><th>Action</th></tr></thead><tbody id="usersTable"></tbody></table></div>
+          </div></div></section>
+
+          <section id="importSection" class="app-section d-none"><div class="card"><div class="card-body">
+            <h5>Import CDR CSV</h5><input type="file" id="csvFile" class="form-control mb-2" /><button id="importBtn" class="btn btn-primary">Upload CSV</button>
+          </div></div></section>
+
+          <section id="exportSection" class="app-section d-none"><div class="card"><div class="card-body">
+            <h5>Export CDR</h5><button id="exportBtn" class="btn btn-success">Download CSV</button>
+          </div></div></section>
+
+          <section id="settingsSection" class="app-section d-none"><div class="card"><div class="card-body">
+            <h5>Settings</h5>
+            <div class="row g-2">
+              <div class="col-md-4"><input id="ucmIp" class="form-control" placeholder="UCM IP" /></div>
+              <div class="col-md-4"><input id="apiUsername" class="form-control" placeholder="API Username" /></div>
+              <div class="col-md-4"><input id="apiPassword" class="form-control" placeholder="API Password" /></div>
+            </div>
+            <button id="saveSettingsBtn" class="btn btn-primary mt-3">Save Settings</button>
+          </div></div></section>
+        </main>
+      </div>
+    </div>
+
+    <div id="toast" class="toast align-items-center text-bg-primary border-0 position-fixed bottom-0 end-0 m-3" role="alert">
+      <div class="d-flex"><div id="toastBody" class="toast-body">Done</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>
+    </div>
+
+    <div id="spinner" class="spinner-overlay d-none"><div class="spinner-border text-primary"></div></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="dashboard.js"></script>
+  </body>
+</html>
