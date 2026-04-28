@@ -10,6 +10,7 @@ router.use(authMiddleware);
 router.get('/cdr', cdrController.listCdr);
 router.get('/stats', cdrController.stats);
 router.post('/cdr/mock', requireRole('admin', 'supervisor'), cdrController.mock);
+router.post('/cdr/reset', requireRole('admin'), cdrController.reset);
 router.post('/import/cdr', requireRole('admin', 'supervisor'), upload.single('file'), cdrController.importCsv);
 router.get('/export/cdr', cdrController.exportCsv);
 

@@ -137,8 +137,15 @@ const insertManyCdr = async (records) => {
   }
 };
 
+
+const resetCdrData = async () => {
+  await pool.query('TRUNCATE TABLE cdr_records RESTART IDENTITY');
+  return true;
+};
+
 module.exports = {
   getCdr,
   getDashboardStats,
   insertManyCdr,
+  resetCdrData,
 };

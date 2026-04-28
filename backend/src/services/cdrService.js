@@ -40,10 +40,17 @@ const parseCsvBuffer = (buffer) => {
   }));
 };
 
+const resetAndSeedCdr = async () => {
+  await cdrModel.resetCdrData();
+  const seeded = generateMockRecords(200);
+  return cdrModel.insertManyCdr(seeded);
+};
+
 module.exports = {
   getCdr: cdrModel.getCdr,
   getDashboardStats: cdrModel.getDashboardStats,
   insertManyCdr: cdrModel.insertManyCdr,
   generateMockRecords,
   parseCsvBuffer,
+  resetAndSeedCdr,
 };

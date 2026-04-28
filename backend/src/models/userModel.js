@@ -5,6 +5,16 @@ const findByEmail = async (email) => {
   return rows[0];
 };
 
+const findById = async (id) => {
+  const { rows } = await pool.query('SELECT id, name, email, role, created_at FROM users WHERE id = $1', [id]);
+  return rows[0];
+};
+
+const countAdmins = async () => {
+  const { rows } = await pool.query("SELECT COUNT(*)::int AS total FROM users WHERE role = 'admin'");
+  return rows[0].total;
+};
+
 const listUsers = async () => {
   const { rows } = await pool.query(
     'SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC'
@@ -25,4 +35,4 @@ const deleteUser = async (id) => {
   return rowCount > 0;
 };
 
-module.exports = { findByEmail, listUsers, createUser, deleteUser };
+module.exports = { findByEmail, findById, countAdmins, listUsers, createUser, deleteUser };

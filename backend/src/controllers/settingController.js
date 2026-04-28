@@ -16,4 +16,12 @@ const upsert = async (req, res, next) => {
   }
 };
 
-module.exports = { list, upsert };
+const testConnection = async (_req, res, next) => {
+  try {
+    res.json({ data: await settingService.testConnection() });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { list, upsert, testConnection };

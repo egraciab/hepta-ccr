@@ -40,6 +40,15 @@ const mock = async (req, res, next) => {
   }
 };
 
+const reset = async (_req, res, next) => {
+  try {
+    const inserted = await cdrService.resetAndSeedCdr();
+    res.json({ data: { inserted } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const importCsv = async (req, res, next) => {
   try {
     if (!req.file) {
@@ -73,4 +82,4 @@ const exportCsv = async (req, res, next) => {
   }
 };
 
-module.exports = { listCdr, stats, mock, importCsv, exportCsv };
+module.exports = { listCdr, stats, mock, reset, importCsv, exportCsv };

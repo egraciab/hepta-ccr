@@ -21,7 +21,7 @@ const create = async (req, res, next) => {
 
 const remove = async (req, res, next) => {
   try {
-    const deleted = await userService.deleteUser(req.params.id);
+    const deleted = await userService.deleteUserSafely(req.params.id, req.user.id);
     res.json({ data: { deleted } });
   } catch (error) {
     next(error);
