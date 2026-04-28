@@ -1,0 +1,11 @@
+body {
+  background: #f5f7fb;
+}
+
+.metric-card {
+  border: none;
+}
+
+.card-header {
+  font-weight: 600;
+}
