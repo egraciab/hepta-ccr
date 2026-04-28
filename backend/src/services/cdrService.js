@@ -1,50 +1,49 @@
 const cdrModel = require('../models/cdrModel');
+const { parse } = require('csv-parse/sync');
 
-const AGENTS = ['Alice', 'Bob', 'Carla', 'Diego', 'Eva'];
-const STATUSES = ['answered', 'missed', 'failed'];
+const AGENTS = ['Alice Johnson', 'Bob Smith', 'Carla Reyes', 'Diego Silva', 'Eva Brown'];
+const STATUSES = ['answered', 'missed', 'busy'];
 
-const randomItem = (list) => list[Math.floor(Math.random() * list.length)];
+const random = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-const randomPhone = (prefix) => `+1${prefix}${Math.floor(1000000 + Math.random() * 8999999)}`;
-
-const createMockRecords = (count = 100) => {
-  const parsedCount = Number.parseInt(count, 10);
-  const safeCount = Number.isNaN(parsedCount) ? 100 : Math.min(Math.max(parsedCount, 1), 5000);
-
-  const records = Array.from({ length: safeCount }, () => {
-    const duration = Math.floor(Math.random() * 600);
-    const daysAgo = Math.floor(Math.random() * 30);
-    const minutesAgo = Math.floor(Math.random() * 1440);
-
-    const callDate = new Date(Date.now() - (daysAgo * 24 * 60 + minutesAgo) * 60 * 1000);
+const generateMockRecords = (count = 100) => {
+  const size = Math.min(Math.max(Number.parseInt(count, 10) || 100, 1), 5000);
+  return Array.from({ length: size }, (_, i) => {
+    const duration = Math.random() < 0.2 ? 0 : 20 + Math.floor(Math.random() * 500);
+    const minutesOffset = Math.floor(Math.random() * 60 * 24 * 15);
 
     return {
-      call_date: callDate.toISOString(),
-      source: randomPhone('2'),
-      destination: randomPhone('3'),
+      call_date: new Date(Date.now() - minutesOffset * 60000).toISOString(),
+      source: `+12${String(10000000 + i)}`,
+      destination: `+13${String(10000000 + i)}`,
       duration,
-      status: randomItem(STATUSES),
-      agent: randomItem(AGENTS),
+      status: random(STATUSES),
+      agent: random(AGENTS),
     };
   });
-
-  return records;
 };
 
-const fetchCdr = async (filters) => cdrModel.getAllCdr(filters);
-const fetchStats = async (filters) => cdrModel.getStats(filters);
+const parseCsvBuffer = (buffer) => {
+  const records = parse(buffer, {
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
+  });
 
-const generateMockCdr = async (count) => {
-  const records = createMockRecords(count);
-  const inserted = await cdrModel.insertMockCdr(records);
-
-  return {
-    inserted,
-  };
+  return records.map((row) => ({
+    call_date: row.call_date,
+    source: row.source,
+    destination: row.destination,
+    duration: Number(row.duration || 0),
+    status: row.status,
+    agent: row.agent,
+  }));
 };
 
 module.exports = {
-  fetchCdr,
-  fetchStats,
-  generateMockCdr,
+  getCdr: cdrModel.getCdr,
+  getDashboardStats: cdrModel.getDashboardStats,
+  insertManyCdr: cdrModel.insertManyCdr,
+  generateMockRecords,
+  parseCsvBuffer,
 };
