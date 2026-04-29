@@ -6,7 +6,9 @@ const parseFilters = (query) => ({
   startDate: query.startDate,
   endDate: query.endDate,
   agent: query.agent,
+  agentId: query.agent_id,
   status: query.status,
+  hour: query.hour,
   search: query.search,
   page: query.page,
   limit: query.limit,
@@ -20,10 +22,35 @@ const statusLabel = {
   busy: 'ocupado',
 };
 
+const applyExtraFilters = (items, filters) => {
+  const hour = Number.parseInt(filters.hour, 10);
+
+  return items.filter((row) => {
+    if (Number.isInteger(hour) && (hour < 0 || hour > 23 || new Date(row.call_date).getHours() !== hour)) {
+      return false;
+    }
+
+    if (filters.agentId && String(row.agent_id || '') !== String(filters.agentId)) {
+      return false;
+    }
+
+    return true;
+  });
+};
+
 const listCdr = async (req, res, next) => {
   try {
-    const data = await cdrService.getCdr(parseFilters(req.query));
-    res.json({ data });
+    const filters = parseFilters(req.query);
+    const data = await cdrService.getCdr(filters);
+    const filteredItems = applyExtraFilters(data.items, filters);
+
+    res.json({
+      data: {
+        ...data,
+        items: filteredItems,
+        total: filteredItems.length,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -31,8 +58,53 @@ const listCdr = async (req, res, next) => {
 
 const stats = async (req, res, next) => {
   try {
-    const data = await cdrService.getDashboardStats(parseFilters(req.query));
-    res.json({ data });
+    const filters = parseFilters(req.query);
+    const data = await cdrService.getDashboardStats(filters);
+
+    if (!Number.isInteger(Number.parseInt(filters.hour, 10))) {
+      return res.json({ data });
+    }
+
+    const hour = Number.parseInt(filters.hour, 10);
+    const details = await cdrService.getCdr({ ...filters, page: 1, limit: 5000 });
+    const hourRows = details.items.filter((row) => new Date(row.call_date).getHours() === hour);
+
+    const perAgentMap = new Map();
+    const perStatusMap = new Map();
+    const perDayMap = new Map();
+    let totalDuration = 0;
+
+    hourRows.forEach((row) => {
+      perAgentMap.set(row.agent, (perAgentMap.get(row.agent) || 0) + 1);
+      perStatusMap.set(row.status, (perStatusMap.get(row.status) || 0) + 1);
+      const day = new Date(row.call_date).toISOString().slice(0, 10);
+      perDayMap.set(day, (perDayMap.get(day) || 0) + 1);
+      totalDuration += Number(row.duration) || 0;
+    });
+
+    const answeredCalls = perStatusMap.get('answered') || 0;
+    const missedCalls = perStatusMap.get('missed') || 0;
+    const callsPerAgent = Array.from(perAgentMap.entries()).map(([agent, total]) => ({ agent, total }));
+    const statusDistribution = Array.from(perStatusMap.entries()).map(([status, total]) => ({ status, total }));
+    const callsPerDay = Array.from(perDayMap.entries()).map(([day, total]) => ({ day, total }));
+
+    callsPerAgent.sort((a, b) => b.total - a.total);
+    statusDistribution.sort((a, b) => b.total - a.total);
+    callsPerDay.sort((a, b) => a.day.localeCompare(b.day));
+
+    res.json({
+      data: {
+        ...data,
+        totalCalls: hourRows.length,
+        averageDuration: hourRows.length ? Number((totalDuration / hourRows.length).toFixed(2)) : 0,
+        answeredCalls,
+        missedCalls,
+        topAgent: callsPerAgent[0]?.agent || 'N/A',
+        callsPerAgent,
+        statusDistribution,
+        callsPerDay,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -75,8 +147,9 @@ const importCsv = async (req, res, next) => {
 };
 
 const getExportRows = async (query) => {
-  const result = await cdrService.getCdr({ ...parseFilters(query), page: 1, limit: 5000 });
-  return result.items;
+  const filters = parseFilters(query);
+  const result = await cdrService.getCdr({ ...filters, page: 1, limit: 5000 });
+  return applyExtraFilters(result.items, filters);
 };
 
 const exportCsv = async (req, res, next) => {

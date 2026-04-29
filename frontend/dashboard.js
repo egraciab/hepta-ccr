@@ -1,11 +1,12 @@
-const API_BASE = 'http://10.10.20.232:3000/api';
+const API_BASE = 'http://localhost:3000/api';
 
 let token = localStorage.getItem('token') || '';
 let currentUser = null;
 let licenseStatus = null;
 let charts = {};
 let loadingCount = 0;
-let cdrState = { page: 1, limit: 15, sortBy: 'call_date', sortOrder: 'desc' };
+let cdrState = { page: 1, limit: 15, sortBy: 'call_date', sortOrder: 'desc', hour: '' };
+let agentsCache = [];
 
 const statusMap = { answered: 'contestadas', missed: 'perdidas', busy: 'ocupado' };
 
@@ -77,12 +78,12 @@ const chartClickFilter = (type, value) => {
     el('cdrStart').value = value;
     el('cdrEnd').value = value;
   }
-  if (type === 'agent') el('cdrAgent').value = value;
+  if (type === 'agent') el('agentFilter').value = value;
   if (type === 'status') el('cdrStatus').value = value;
-  if (type === 'hour') el('cdrSearch').value = `${value}:`;
+  if (type === 'hour') cdrState.hour = String(value);
   cdrState.page = 1;
   openSection('cdr');
-  loadCdr();
+  loadCdr().catch((error) => notify(error.message, true));
 };
 
 const drawChart = (id, config) => {
@@ -90,7 +91,10 @@ const drawChart = (id, config) => {
   const palette = chartPalette();
   charts[id] = new Chart(el(id), {
     type: config.type,
-    data: { labels: config.labels, datasets: [{ data: config.values, backgroundColor: config.color, borderColor: config.color, fill: config.type === 'line', tension: 0.2 }] },
+    data: {
+      labels: config.labels,
+      datasets: [{ label: 'Llamadas', data: config.values, backgroundColor: config.color, borderColor: config.color, fill: config.type === 'line', tension: 0.2 }],
+    },
     options: {
       plugins: { legend: { labels: { color: palette.text } } },
       scales: config.type === 'pie' ? {} : {
@@ -99,8 +103,7 @@ const drawChart = (id, config) => {
       },
       onClick: (_event, elements) => {
         if (!elements.length || !config.onClick) return;
-        const idx = elements[0].index;
-        config.onClick(idx);
+        config.onClick(elements[0].index);
       },
     },
   });
@@ -116,23 +119,13 @@ const queryFromRange = (a = 'startDate', b = 'endDate') => {
 const loadLicenseStatus = async () => {
   const response = await api('/license/status');
   licenseStatus = (await response.json()).data;
-
   const banner = el('licenseBanner');
   if (licenseStatus.restricted) {
     banner.textContent = 'Sistema en modo restringido por licencia';
     banner.classList.remove('d-none');
-  } else if (licenseStatus.mode === 'trial') {
-    banner.textContent = `Licencia trial activa. Validación: ${licenseStatus.reason}`;
-    banner.classList.remove('d-none');
   } else {
     banner.classList.add('d-none');
   }
-
-  const disabled = licenseStatus.restricted;
-  ['importBtn', 'exportCsvBtn', 'exportXlsxBtn', 'exportPdfBtn', 'testConnectionBtn', 'addUserBtn'].forEach((id) => {
-    const node = el(id);
-    if (node) node.disabled = disabled;
-  });
 };
 
 const login = async () => {
@@ -164,9 +157,7 @@ const logout = () => {
 
 const applyRoleVisibility = () => {
   const isAdmin = currentUser?.role === 'admin';
-  document.querySelectorAll('[data-admin-only="true"]').forEach((node) => {
-    node.classList.toggle('d-none', !isAdmin);
-  });
+  document.querySelectorAll('[data-admin-only="true"]').forEach((node) => node.classList.toggle('d-none', !isAdmin));
 };
 
 const loadDashboard = async () => {
@@ -177,45 +168,22 @@ const loadDashboard = async () => {
   el('answeredMissed').textContent = `${stats.answeredCalls} / ${stats.missedCalls}`;
   el('topAgent').textContent = stats.topAgent;
 
-  drawChart('callsPerDayChart', {
-    type: 'line',
-    labels: stats.callsPerDay.map((x) => x.day),
-    values: stats.callsPerDay.map((x) => x.total),
-    color: '#3b82f6',
-    onClick: (idx) => chartClickFilter('day', stats.callsPerDay[idx].day),
-  });
-
-  drawChart('callsPerAgentChart', {
-    type: 'bar',
-    labels: stats.callsPerAgent.map((x) => x.agent),
-    values: stats.callsPerAgent.map((x) => x.total),
-    color: '#10b981',
-    onClick: (idx) => chartClickFilter('agent', stats.callsPerAgent[idx].agent),
-  });
-
-  drawChart('statusChart', {
-    type: 'pie',
-    labels: stats.statusDistribution.map((x) => statusMap[x.status] || x.status),
-    values: stats.statusDistribution.map((x) => x.total),
-    color: ['#3b82f6', '#f59e0b', '#ef4444'],
-    onClick: (idx) => chartClickFilter('status', stats.statusDistribution[idx].status),
-  });
-
-  drawChart('hourChart', {
-    type: 'bar',
-    labels: stats.callsByHour.map((x) => `${x.hour}:00`),
-    values: stats.callsByHour.map((x) => x.total),
-    color: '#8b5cf6',
-    onClick: (idx) => chartClickFilter('hour', stats.callsByHour[idx].hour),
-  });
+  drawChart('callsPerDayChart', { type: 'line', labels: stats.callsPerDay.map((x) => x.day), values: stats.callsPerDay.map((x) => x.total), color: '#3b82f6', onClick: (idx) => chartClickFilter('day', stats.callsPerDay[idx].day) });
+  drawChart('callsPerAgentChart', { type: 'bar', labels: stats.callsPerAgent.map((x) => x.agent), values: stats.callsPerAgent.map((x) => x.total), color: '#10b981', onClick: (idx) => chartClickFilter('agent', stats.callsPerAgent[idx].agent) });
+  drawChart('statusChart', { type: 'pie', labels: stats.statusDistribution.map((x) => statusMap[x.status] || x.status), values: stats.statusDistribution.map((x) => x.total), color: ['#3b82f6', '#f59e0b', '#ef4444'], onClick: (idx) => chartClickFilter('status', stats.statusDistribution[idx].status) });
+  drawChart('hourChart', { type: 'bar', labels: stats.callsByHour.map((x) => `${x.hour}:00`), values: stats.callsByHour.map((x) => x.total), color: '#8b5cf6', onClick: (idx) => chartClickFilter('hour', Number(stats.callsByHour[idx].hour)) });
 };
 
 const cdrQuery = () => {
   const params = queryFromRange('cdrStart', 'cdrEnd');
-  if (el('cdrAgent').value) params.append('agent', el('cdrAgent').value);
+  if (el('agentFilter').value) params.append('agent', el('agentFilter').value);
   if (el('cdrStatus').value) params.append('status', el('cdrStatus').value);
   if (el('cdrSearch').value) params.append('search', el('cdrSearch').value);
-  Object.entries(cdrState).forEach(([k, v]) => params.append(k, v));
+  if (cdrState.hour !== '') params.append('hour', cdrState.hour);
+  params.append('page', cdrState.page);
+  params.append('limit', cdrState.limit);
+  params.append('sortBy', cdrState.sortBy);
+  params.append('sortOrder', cdrState.sortOrder);
   return params;
 };
 
@@ -229,7 +197,19 @@ const loadCdr = async () => {
 const loadAgents = async () => {
   const response = await api('/agents');
   const agents = (await response.json()).data;
+  agentsCache = agents;
   el('agentsTable').innerHTML = agents.map((a) => `<tr><td>${a.name}</td><td>${a.extension}</td><td><button data-id="${a.id}" class="btn btn-sm btn-outline-danger delete-agent">Eliminar</button></td></tr>`).join('');
+
+  const agentFilter = el('agentFilter');
+  const current = agentFilter.value;
+  agentFilter.innerHTML = '<option value="">Todos</option>';
+  agents.forEach((agent) => {
+    const option = document.createElement('option');
+    option.value = agent.name;
+    option.textContent = agent.name;
+    agentFilter.appendChild(option);
+  });
+  agentFilter.value = current;
 };
 
 const loadUsers = async () => {
@@ -243,8 +223,7 @@ const loadSettings = async () => {
   if (currentUser?.role !== 'admin') return;
   const response = await api('/settings');
   const map = Object.fromEntries((await response.json()).data.map((x) => [x.key, x.value]));
-  el('ucmIp').value = map.ucm_ip || '';
-  el('ucmPort').value = map.ucm_port || '8089';
+  el('ucmBaseUrl').value = map.ucm_base_url || '';
   el('apiUsername').value = map.ucm_api_user || '';
   el('apiPassword').value = map.ucm_api_password || '';
 };
@@ -255,6 +234,26 @@ const openSection = (name) => {
   el(`${name}Section`).classList.remove('d-none');
 };
 
+const bootstrapData = async () => {
+  await loadLicenseStatus();
+  await Promise.all([loadDashboard(), loadAgents(), loadUsers(), loadSettings(), loadCdr()]);
+};
+
+const applyCdrFilters = () => {
+  cdrState.page = 1;
+  loadCdr().catch((error) => notify(error.message, true));
+};
+
+const clearFilters = () => {
+  el('cdrStart').value = '';
+  el('cdrEnd').value = '';
+  el('agentFilter').value = '';
+  el('cdrStatus').value = '';
+  el('cdrSearch').value = '';
+  cdrState.hour = '';
+  applyCdrFilters();
+};
+
 const downloadFrom = async (url, filename) => {
   const response = await api(url);
   const blob = await response.blob();
@@ -263,11 +262,6 @@ const downloadFrom = async (url, filename) => {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(link.href);
-};
-
-const bootstrapData = async () => {
-  await loadLicenseStatus();
-  await Promise.all([loadDashboard(), loadCdr(), loadAgents(), loadUsers(), loadSettings()]);
 };
 
 const initEvents = () => {
@@ -296,14 +290,21 @@ const initEvents = () => {
     await Promise.all([loadDashboard(), loadCdr()]);
   });
 
-  el('cdrFilterBtn').addEventListener('click', () => { cdrState.page = 1; loadCdr(); });
-  el('prevPage').addEventListener('click', () => { cdrState.page = Math.max(1, cdrState.page - 1); loadCdr(); });
-  el('nextPage').addEventListener('click', () => { cdrState.page += 1; loadCdr(); });
+  el('cdrFilterBtn').addEventListener('click', applyCdrFilters);
+  el('clearFiltersBtn').addEventListener('click', clearFilters);
+  ['cdrStart', 'cdrEnd', 'agentFilter', 'cdrStatus'].forEach((id) => el(id).addEventListener('change', applyCdrFilters));
+  el('cdrSearch').addEventListener('input', () => {
+    clearTimeout(window.__cdrSearchTimer);
+    window.__cdrSearchTimer = setTimeout(applyCdrFilters, 300);
+  });
+
+  el('prevPage').addEventListener('click', () => { cdrState.page = Math.max(1, cdrState.page - 1); loadCdr().catch((e) => notify(e.message, true)); });
+  el('nextPage').addEventListener('click', () => { cdrState.page += 1; loadCdr().catch((e) => notify(e.message, true)); });
 
   document.querySelectorAll('#cdrTable th[data-sort]').forEach((th) => th.addEventListener('click', () => {
     cdrState.sortOrder = cdrState.sortBy === th.dataset.sort && cdrState.sortOrder === 'asc' ? 'desc' : 'asc';
     cdrState.sortBy = th.dataset.sort;
-    loadCdr();
+    loadCdr().catch((e) => notify(e.message, true));
   }));
 
   el('addAgentBtn').addEventListener('click', async () => {
@@ -316,73 +317,80 @@ const initEvents = () => {
   });
 
   document.addEventListener('click', async (event) => {
-    if (event.target.classList.contains('delete-agent')) {
-      if (!(await confirmAction('¿Eliminar este agente?'))) return;
-      await api(`/agents/${event.target.dataset.id}`, { method: 'DELETE' });
-      notify('Agente eliminado');
-      await loadAgents();
-    }
+    try {
+      if (event.target.classList.contains('delete-agent')) {
+        if (!(await confirmAction('¿Eliminar este agente?'))) return;
+        await api(`/agents/${event.target.dataset.id}`, { method: 'DELETE' });
+        notify('Agente eliminado');
+        await loadAgents();
+      }
 
-    if (event.target.classList.contains('delete-user')) {
-      if (!(await confirmAction('¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.'))) return;
-      try {
+      if (event.target.classList.contains('delete-user')) {
+        if (!(await confirmAction('¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.'))) return;
         await api(`/users/${event.target.dataset.id}`, { method: 'DELETE' });
         notify('Usuario eliminado');
         await loadUsers();
-      } catch (error) {
-        notify(error.message, true);
       }
-    }
 
-    if (event.target.classList.contains('edit-user')) {
-      const id = event.target.dataset.id;
-      const name = prompt('Nuevo nombre');
-      const email = prompt('Nuevo correo');
-      const role = prompt('Rol (admin/supervisor/viewer)');
-      await api(`/users/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, role }) });
-      notify('Usuario actualizado');
-      await loadUsers();
-    }
+      if (event.target.classList.contains('edit-user')) {
+        const id = event.target.dataset.id;
+        const name = prompt('Nuevo nombre');
+        const email = prompt('Nuevo correo');
+        const role = prompt('Rol (admin/supervisor/viewer)');
+        await api(`/users/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, role }) });
+        notify('Usuario actualizado');
+        await loadUsers();
+      }
 
-    if (event.target.classList.contains('pass-user')) {
-      const id = event.target.dataset.id;
-      const password = prompt('Nueva contraseña (mínimo 6)');
-      if (!password) return;
-      await api(`/users/${id}/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-      notify('Contraseña actualizada');
+      if (event.target.classList.contains('pass-user')) {
+        const id = event.target.dataset.id;
+        const password = prompt('Nueva contraseña (mínimo 6)');
+        if (!password) return;
+        await api(`/users/${id}/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+        notify('Contraseña actualizada');
+      }
+    } catch (error) {
+      notify(error.message, true);
     }
   });
 
   el('addUserBtn').addEventListener('click', async () => {
-    const name = prompt('Nombre');
-    const email = prompt('Correo');
-    const password = prompt('Contraseña');
-    const role = prompt('Rol (admin/supervisor/viewer)', 'viewer');
-    if (!name || !email || !password) return;
-    await api('/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, password, role }) });
-    notify('Usuario creado');
-    await loadUsers();
+    try {
+      const name = prompt('Nombre');
+      const email = prompt('Correo');
+      const password = prompt('Contraseña');
+      const role = prompt('Rol (admin/supervisor/viewer)', 'viewer');
+      if (!name || !email || !password) return;
+      await api('/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, password, role }) });
+      notify('Usuario creado');
+      await loadUsers();
+    } catch (error) {
+      notify(error.message, true);
+    }
   });
 
   el('importBtn').addEventListener('click', async () => {
-    const file = el('csvFile').files[0];
-    if (!file) return;
-    if (!(await confirmAction('¿Importar archivo CSV?'))) return;
-    const data = new FormData();
-    data.append('file', file);
-    await api('/import/cdr', { method: 'POST', body: data });
-    notify('CSV importado');
-    await Promise.all([loadDashboard(), loadCdr()]);
+    try {
+      const file = el('csvFile').files[0];
+      if (!file) return;
+      if (!(await confirmAction('¿Importar archivo CSV?'))) return;
+      const data = new FormData();
+      data.append('file', file);
+      await api('/import/cdr', { method: 'POST', body: data });
+      notify('CSV importado');
+      await Promise.all([loadDashboard(), loadCdr()]);
+    } catch (error) {
+      notify(error.message, true);
+    }
   });
 
-  el('exportCsvBtn').addEventListener('click', () => downloadFrom('/export/cdr', 'reporte_llamadas.csv'));
-  el('exportXlsxBtn').addEventListener('click', () => downloadFrom('/export/cdr/xlsx', 'reporte_llamadas.xlsx'));
-  el('exportPdfBtn').addEventListener('click', () => downloadFrom('/export/cdr/pdf', 'reporte_llamadas.pdf'));
+  el('exportCsvBtn').addEventListener('click', () => downloadFrom('/export/cdr', 'reporte_llamadas.csv').catch((e) => notify(e.message, true)));
+  el('exportXlsxBtn').addEventListener('click', () => downloadFrom('/export/cdr/xlsx', 'reporte_llamadas.xlsx').catch((e) => notify(e.message, true)));
+  el('exportPdfBtn').addEventListener('click', () => downloadFrom('/export/cdr/pdf', 'reporte_llamadas.pdf').catch((e) => notify(e.message, true)));
 
   el('saveSettingsBtn').addEventListener('click', async () => {
     const payloads = [
-      { key: 'ucm_ip', value: el('ucmIp').value.trim() },
-      { key: 'ucm_port', value: el('ucmPort').value.trim() },
+      { key: 'ucm_base_url', value: el('ucmBaseUrl').value.trim() },
       { key: 'ucm_api_user', value: el('apiUsername').value.trim() },
       { key: 'ucm_api_password', value: el('apiPassword').value.trim() },
     ];
@@ -417,5 +425,8 @@ applyTheme(localStorage.getItem('theme') || 'light');
 if (token) {
   el('loginView').classList.add('d-none');
   el('appView').classList.remove('d-none');
-  bootstrapData().catch(() => logout());
+  bootstrapData().catch((error) => {
+    notify(error.message, true);
+    logout();
+  });
 }
