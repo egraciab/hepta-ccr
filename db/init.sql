@@ -45,8 +45,9 @@ WHERE NOT EXISTS (SELECT 1 FROM agents);
 INSERT INTO settings (key, value)
 SELECT * FROM (VALUES
   ('ucm_ip', '192.168.1.20'),
-  ('api_username', 'hepta_api'),
-  ('api_password', 'change_me')
+  ('ucm_port', '8089'),
+  ('ucm_api_user', 'hepta_api'),
+  ('ucm_api_password', 'change_me')
 ) AS data(key, value)
 ON CONFLICT (key) DO NOTHING;
 

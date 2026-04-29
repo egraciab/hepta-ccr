@@ -22,27 +22,20 @@ const validateSetting = ({ key, value }) => {
     }
   }
 
-  if ((key === 'api_username' || key === 'api_password') && value.trim().length < 3) {
+  if (key === 'ucm_port') {
+    const port = Number.parseInt(value, 10);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      const error = new Error('Puerto de UCM inválido');
+      error.status = 400;
+      throw error;
+    }
+  }
+
+  if ((key === 'ucm_api_user' || key === 'ucm_api_password') && value.trim().length < 3) {
     const error = new Error('Las credenciales deben tener al menos 3 caracteres');
     error.status = 400;
     throw error;
   }
-};
-
-const testConnection = async () => {
-  const settings = await settingModel.listSettings();
-  const map = Object.fromEntries(settings.map((item) => [item.key, item.value]));
-
-  if (!map.ucm_ip || !map.api_username || !map.api_password) {
-    const error = new Error('Configura IP, usuario y contraseña antes de probar conexión');
-    error.status = 400;
-    throw error;
-  }
-
-  return {
-    success: true,
-    message: `Conexión simulada exitosa con UCM en ${map.ucm_ip}`,
-  };
 };
 
 module.exports = {
@@ -51,5 +44,4 @@ module.exports = {
     validateSetting(payload);
     return settingModel.upsertSetting(payload);
   },
-  testConnection,
 };

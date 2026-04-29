@@ -33,6 +33,9 @@ services:
       NODE_ENV: production
     ports:
       - "3000:3000"
+    volumes:
+      - ./config:/config
+      - /etc/machine-id:/etc/machine-id:ro
     depends_on:
       db:
         condition: service_healthy

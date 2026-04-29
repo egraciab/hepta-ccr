@@ -16,9 +16,7 @@ const countAdmins = async () => {
 };
 
 const listUsers = async () => {
-  const { rows } = await pool.query(
-    'SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC'
-  );
+  const { rows } = await pool.query('SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC');
   return rows;
 };
 
@@ -30,9 +28,22 @@ const createUser = async ({ name, email, password, role }) => {
   return rows[0];
 };
 
+const updateUser = async (id, { name, email, role }) => {
+  const { rows } = await pool.query(
+    'UPDATE users SET name = $1, email = $2, role = $3 WHERE id = $4 RETURNING id, name, email, role, created_at',
+    [name, email, role, id]
+  );
+  return rows[0];
+};
+
+const updatePassword = async (id, passwordHash) => {
+  const { rowCount } = await pool.query('UPDATE users SET password = $1 WHERE id = $2', [passwordHash, id]);
+  return rowCount > 0;
+};
+
 const deleteUser = async (id) => {
   const { rowCount } = await pool.query('DELETE FROM users WHERE id = $1', [id]);
   return rowCount > 0;
 };
 
-module.exports = { findByEmail, findById, countAdmins, listUsers, createUser, deleteUser };
+module.exports = { findByEmail, findById, countAdmins, listUsers, createUser, updateUser, updatePassword, deleteUser };

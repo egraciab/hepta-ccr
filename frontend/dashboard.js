@@ -2,9 +2,12 @@ const API_BASE = 'http://10.10.20.232:3000/api';
 
 let token = localStorage.getItem('token') || '';
 let currentUser = null;
+let licenseStatus = null;
 let charts = {};
 let loadingCount = 0;
 let cdrState = { page: 1, limit: 15, sortBy: 'call_date', sortOrder: 'desc' };
+
+const statusMap = { answered: 'contestadas', missed: 'perdidas', busy: 'ocupado' };
 
 const el = (id) => document.getElementById(id);
 const spinner = el('spinner');
@@ -24,39 +27,32 @@ const notify = (msg, isError = false) => {
   toast.show();
 };
 
-const confirmAction = (message) =>
-  new Promise((resolve) => {
-    el('confirmMessage').textContent = message;
-    const btn = el('confirmAcceptBtn');
-    const onAccept = () => {
-      btn.removeEventListener('click', onAccept);
-      confirmModal.hide();
-      resolve(true);
-    };
-    btn.addEventListener('click', onAccept);
-    el('confirmModal').addEventListener(
-      'hidden.bs.modal',
-      () => {
-        btn.removeEventListener('click', onAccept);
-        resolve(false);
-      },
-      { once: true }
-    );
-    confirmModal.show();
-  });
+const confirmAction = (message) => new Promise((resolve) => {
+  el('confirmMessage').textContent = message;
+  const accept = el('confirmAcceptBtn');
+  const onOk = () => {
+    accept.removeEventListener('click', onOk);
+    confirmModal.hide();
+    resolve(true);
+  };
+  accept.addEventListener('click', onOk);
+  el('confirmModal').addEventListener('hidden.bs.modal', () => {
+    accept.removeEventListener('click', onOk);
+    resolve(false);
+  }, { once: true });
+  confirmModal.show();
+});
 
 const api = async (path, options = {}) => {
   setLoading(true);
   try {
     const headers = { ...(options.headers || {}) };
     if (token) headers.Authorization = `Bearer ${token}`;
-
     const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
       throw new Error(err.message || `Error API ${response.status}`);
     }
-
     return response;
   } finally {
     setLoading(false);
@@ -64,42 +60,79 @@ const api = async (path, options = {}) => {
 };
 
 const applyTheme = (theme) => {
-  const safeTheme = theme === 'dark' ? 'dark' : 'light';
-  document.documentElement.setAttribute('data-theme', safeTheme);
-  document.documentElement.setAttribute('data-bs-theme', safeTheme);
-  localStorage.setItem('theme', safeTheme);
-  el('darkModeBtn').innerHTML = safeTheme === 'dark' ? '<i class="bi bi-sun"></i> Modo claro' : '<i class="bi bi-moon-stars"></i> Modo oscuro';
+  const value = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', value);
+  document.documentElement.setAttribute('data-bs-theme', value);
+  localStorage.setItem('theme', value);
+  el('darkModeBtn').innerHTML = value === 'dark' ? '<i class="bi bi-sun"></i> Modo claro' : '<i class="bi bi-moon-stars"></i> Modo oscuro';
 };
 
-const getChartColors = () => {
+const chartPalette = () => {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-  return {
-    text: dark ? '#e5e7eb' : '#334155',
-    grid: dark ? 'rgba(203,213,225,0.15)' : 'rgba(100,116,139,0.2)',
-  };
+  return { text: dark ? '#e5e7eb' : '#334155', grid: dark ? 'rgba(203,213,225,0.2)' : 'rgba(100,116,139,0.2)' };
 };
 
-const drawChart = (id, type, labels, data, color = '#2563eb') => {
+const chartClickFilter = (type, value) => {
+  if (type === 'day') {
+    el('cdrStart').value = value;
+    el('cdrEnd').value = value;
+  }
+  if (type === 'agent') el('cdrAgent').value = value;
+  if (type === 'status') el('cdrStatus').value = value;
+  if (type === 'hour') el('cdrSearch').value = `${value}:`;
+  cdrState.page = 1;
+  openSection('cdr');
+  loadCdr();
+};
+
+const drawChart = (id, config) => {
   if (charts[id]) charts[id].destroy();
-  const palette = getChartColors();
+  const palette = chartPalette();
   charts[id] = new Chart(el(id), {
-    type,
-    data: { labels, datasets: [{ data, backgroundColor: color, borderColor: color, fill: type === 'line', tension: 0.2 }] },
+    type: config.type,
+    data: { labels: config.labels, datasets: [{ data: config.values, backgroundColor: config.color, borderColor: config.color, fill: config.type === 'line', tension: 0.2 }] },
     options: {
       plugins: { legend: { labels: { color: palette.text } } },
-      scales: type === 'pie' ? {} : {
+      scales: config.type === 'pie' ? {} : {
         x: { ticks: { color: palette.text }, grid: { color: palette.grid } },
         y: { ticks: { color: palette.text }, grid: { color: palette.grid } },
+      },
+      onClick: (_event, elements) => {
+        if (!elements.length || !config.onClick) return;
+        const idx = elements[0].index;
+        config.onClick(idx);
       },
     },
   });
 };
 
-const queryFromDateRange = () => {
+const queryFromRange = (a = 'startDate', b = 'endDate') => {
   const params = new URLSearchParams();
-  if (el('startDate').value) params.append('startDate', `${el('startDate').value}T00:00:00.000Z`);
-  if (el('endDate').value) params.append('endDate', `${el('endDate').value}T23:59:59.999Z`);
+  if (el(a).value) params.append('startDate', `${el(a).value}T00:00:00.000Z`);
+  if (el(b).value) params.append('endDate', `${el(b).value}T23:59:59.999Z`);
   return params;
+};
+
+const loadLicenseStatus = async () => {
+  const response = await api('/license/status');
+  licenseStatus = (await response.json()).data;
+
+  const banner = el('licenseBanner');
+  if (licenseStatus.restricted) {
+    banner.textContent = 'Sistema en modo restringido por licencia';
+    banner.classList.remove('d-none');
+  } else if (licenseStatus.mode === 'trial') {
+    banner.textContent = `Licencia trial activa. Validación: ${licenseStatus.reason}`;
+    banner.classList.remove('d-none');
+  } else {
+    banner.classList.add('d-none');
+  }
+
+  const disabled = licenseStatus.restricted;
+  ['importBtn', 'exportCsvBtn', 'exportXlsxBtn', 'exportPdfBtn', 'testConnectionBtn', 'addUserBtn'].forEach((id) => {
+    const node = el(id);
+    if (node) node.disabled = disabled;
+  });
 };
 
 const login = async () => {
@@ -115,6 +148,7 @@ const login = async () => {
     localStorage.setItem('token', token);
     el('loginView').classList.add('d-none');
     el('appView').classList.remove('d-none');
+    applyRoleVisibility();
     notify('Sesión iniciada');
     await bootstrapData();
   } catch (error) {
@@ -125,29 +159,59 @@ const login = async () => {
 const logout = () => {
   localStorage.removeItem('token');
   token = '';
-  currentUser = null;
   location.reload();
 };
 
-const loadDashboard = async () => {
-  const response = await api(`/stats?${queryFromDateRange().toString()}`);
-  const stats = (await response.json()).data;
+const applyRoleVisibility = () => {
+  const isAdmin = currentUser?.role === 'admin';
+  document.querySelectorAll('[data-admin-only="true"]').forEach((node) => {
+    node.classList.toggle('d-none', !isAdmin);
+  });
+};
 
+const loadDashboard = async () => {
+  const response = await api(`/stats?${queryFromRange().toString()}`);
+  const stats = (await response.json()).data;
   el('totalCalls').textContent = stats.totalCalls;
   el('avgDuration').textContent = stats.averageDuration;
   el('answeredMissed').textContent = `${stats.answeredCalls} / ${stats.missedCalls}`;
   el('topAgent').textContent = stats.topAgent;
 
-  drawChart('callsPerDayChart', 'line', stats.callsPerDay.map((x) => x.day), stats.callsPerDay.map((x) => x.total), '#3b82f6');
-  drawChart('callsPerAgentChart', 'bar', stats.callsPerAgent.map((x) => x.agent), stats.callsPerAgent.map((x) => x.total), '#10b981');
-  drawChart('statusChart', 'pie', stats.statusDistribution.map((x) => x.status), stats.statusDistribution.map((x) => x.total), ['#3b82f6', '#f59e0b', '#ef4444']);
-  drawChart('hourChart', 'bar', stats.callsByHour.map((x) => `${x.hour}:00`), stats.callsByHour.map((x) => x.total), '#8b5cf6');
+  drawChart('callsPerDayChart', {
+    type: 'line',
+    labels: stats.callsPerDay.map((x) => x.day),
+    values: stats.callsPerDay.map((x) => x.total),
+    color: '#3b82f6',
+    onClick: (idx) => chartClickFilter('day', stats.callsPerDay[idx].day),
+  });
+
+  drawChart('callsPerAgentChart', {
+    type: 'bar',
+    labels: stats.callsPerAgent.map((x) => x.agent),
+    values: stats.callsPerAgent.map((x) => x.total),
+    color: '#10b981',
+    onClick: (idx) => chartClickFilter('agent', stats.callsPerAgent[idx].agent),
+  });
+
+  drawChart('statusChart', {
+    type: 'pie',
+    labels: stats.statusDistribution.map((x) => statusMap[x.status] || x.status),
+    values: stats.statusDistribution.map((x) => x.total),
+    color: ['#3b82f6', '#f59e0b', '#ef4444'],
+    onClick: (idx) => chartClickFilter('status', stats.statusDistribution[idx].status),
+  });
+
+  drawChart('hourChart', {
+    type: 'bar',
+    labels: stats.callsByHour.map((x) => `${x.hour}:00`),
+    values: stats.callsByHour.map((x) => x.total),
+    color: '#8b5cf6',
+    onClick: (idx) => chartClickFilter('hour', stats.callsByHour[idx].hour),
+  });
 };
 
 const cdrQuery = () => {
-  const params = new URLSearchParams();
-  if (el('cdrStart').value) params.append('startDate', `${el('cdrStart').value}T00:00:00.000Z`);
-  if (el('cdrEnd').value) params.append('endDate', `${el('cdrEnd').value}T23:59:59.999Z`);
+  const params = queryFromRange('cdrStart', 'cdrEnd');
   if (el('cdrAgent').value) params.append('agent', el('cdrAgent').value);
   if (el('cdrStatus').value) params.append('status', el('cdrStatus').value);
   if (el('cdrSearch').value) params.append('search', el('cdrSearch').value);
@@ -158,9 +222,7 @@ const cdrQuery = () => {
 const loadCdr = async () => {
   const response = await api(`/cdr?${cdrQuery().toString()}`);
   const payload = (await response.json()).data;
-  const tbody = el('cdrTable').querySelector('tbody');
-
-  tbody.innerHTML = payload.items.map((row) => `<tr><td>${new Date(row.call_date).toLocaleString('es-ES')}</td><td>${row.source}</td><td>${row.destination}</td><td>${row.duration}</td><td>${row.status}</td><td>${row.agent}</td></tr>`).join('');
+  el('cdrTable').querySelector('tbody').innerHTML = payload.items.map((row) => `<tr><td>${new Date(row.call_date).toLocaleString('es-ES')}</td><td>${row.source}</td><td>${row.destination}</td><td>${row.duration}</td><td>${statusMap[row.status] || row.status}</td><td>${row.agent}</td></tr>`).join('');
   el('cdrPageInfo').textContent = `Página ${payload.page} / ${Math.max(1, Math.ceil(payload.total / payload.limit))}`;
 };
 
@@ -171,117 +233,123 @@ const loadAgents = async () => {
 };
 
 const loadUsers = async () => {
-  try {
-    const response = await api('/users');
-    const users = (await response.json()).data;
-    el('usersTable').innerHTML = users.map((u) => `<tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td><td>${new Date(u.created_at).toLocaleString('es-ES')}</td><td><button data-id="${u.id}" class="btn btn-sm btn-outline-danger delete-user">Eliminar</button></td></tr>`).join('');
-  } catch (_error) {
-    el('usersSection').innerHTML = '<div class="alert alert-warning">El módulo de usuarios requiere rol administrador.</div>';
-  }
+  if (currentUser?.role !== 'admin') return;
+  const response = await api('/users');
+  const users = (await response.json()).data;
+  el('usersTable').innerHTML = users.map((u) => `<tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td><td>${new Date(u.created_at).toLocaleString('es-ES')}</td><td><button data-id="${u.id}" class="btn btn-sm btn-outline-primary edit-user">Editar</button> <button data-id="${u.id}" class="btn btn-sm btn-outline-warning pass-user">Clave</button> <button data-id="${u.id}" class="btn btn-sm btn-outline-danger delete-user">Eliminar</button></td></tr>`).join('');
 };
 
 const loadSettings = async () => {
-  try {
-    const response = await api('/settings');
-    const entries = (await response.json()).data;
-    const map = Object.fromEntries(entries.map((x) => [x.key, x.value]));
-    el('ucmIp').value = map.ucm_ip || '';
-    el('apiUsername').value = map.api_username || '';
-    el('apiPassword').value = map.api_password || '';
-  } catch (_error) {
-    el('settingsSection').innerHTML = '<div class="alert alert-warning">La configuración requiere rol administrador.</div>';
-  }
+  if (currentUser?.role !== 'admin') return;
+  const response = await api('/settings');
+  const map = Object.fromEntries((await response.json()).data.map((x) => [x.key, x.value]));
+  el('ucmIp').value = map.ucm_ip || '';
+  el('ucmPort').value = map.ucm_port || '8089';
+  el('apiUsername').value = map.ucm_api_user || '';
+  el('apiPassword').value = map.ucm_api_password || '';
+};
+
+const openSection = (name) => {
+  document.querySelectorAll('.menu-item').forEach((x) => x.classList.toggle('active', x.dataset.section === name));
+  document.querySelectorAll('.app-section').forEach((section) => section.classList.add('d-none'));
+  el(`${name}Section`).classList.remove('d-none');
+};
+
+const downloadFrom = async (url, filename) => {
+  const response = await api(url);
+  const blob = await response.blob();
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
 };
 
 const bootstrapData = async () => {
-  await Promise.all([loadDashboard(), loadAgents(), loadUsers(), loadSettings(), loadCdr()]);
+  await loadLicenseStatus();
+  await Promise.all([loadDashboard(), loadCdr(), loadAgents(), loadUsers(), loadSettings()]);
 };
 
 const initEvents = () => {
   el('loginBtn').addEventListener('click', login);
   el('logoutBtn').addEventListener('click', logout);
+  el('darkModeBtn').addEventListener('click', async () => {
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    await loadDashboard();
+  });
+  el('toggleSidebar').addEventListener('click', () => el('sidebar').classList.toggle('collapsed'));
+
+  document.querySelectorAll('.menu-item').forEach((item) => item.addEventListener('click', () => openSection(item.dataset.section)));
 
   el('refreshDashboard').addEventListener('click', loadDashboard);
   el('generateMock').addEventListener('click', async () => {
     await api('/cdr/mock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: 100 }) });
-    notify('Datos de llamadas generados');
+    notify('Llamadas de prueba generadas');
     await Promise.all([loadDashboard(), loadCdr()]);
   });
 
   el('resetDataBtn').addEventListener('click', async () => {
-    const ok = await confirmAction('¿Estás seguro de que deseas resetear los datos? Esta acción no se puede deshacer.');
-    if (!ok) return;
+    if (!(await confirmAction('¿Está seguro?'))) return;
+    if (!(await confirmAction('Esta acción es irreversible. ¿Desea continuar?'))) return;
     await api('/cdr/reset', { method: 'POST' });
-    notify('Datos reseteados correctamente');
+    notify('Datos reiniciados');
     await Promise.all([loadDashboard(), loadCdr()]);
   });
 
-  el('toggleSidebar').addEventListener('click', () => el('sidebar').classList.toggle('collapsed'));
-  el('darkModeBtn').addEventListener('click', async () => {
-    const current = document.documentElement.getAttribute('data-theme');
-    applyTheme(current === 'dark' ? 'light' : 'dark');
-    await loadDashboard();
-  });
+  el('cdrFilterBtn').addEventListener('click', () => { cdrState.page = 1; loadCdr(); });
+  el('prevPage').addEventListener('click', () => { cdrState.page = Math.max(1, cdrState.page - 1); loadCdr(); });
+  el('nextPage').addEventListener('click', () => { cdrState.page += 1; loadCdr(); });
 
-  document.querySelectorAll('.menu-item').forEach((item) => item.addEventListener('click', () => {
-    document.querySelectorAll('.menu-item').forEach((x) => x.classList.remove('active'));
-    item.classList.add('active');
-    const target = item.dataset.section;
-    document.querySelectorAll('.app-section').forEach((section) => section.classList.add('d-none'));
-    el(`${target}Section`).classList.remove('d-none');
+  document.querySelectorAll('#cdrTable th[data-sort]').forEach((th) => th.addEventListener('click', () => {
+    cdrState.sortOrder = cdrState.sortBy === th.dataset.sort && cdrState.sortOrder === 'asc' ? 'desc' : 'asc';
+    cdrState.sortBy = th.dataset.sort;
+    loadCdr();
   }));
-
-  el('cdrFilterBtn').addEventListener('click', () => {
-    cdrState.page = 1;
-    loadCdr();
-  });
-  el('prevPage').addEventListener('click', () => {
-    cdrState.page = Math.max(1, cdrState.page - 1);
-    loadCdr();
-  });
-  el('nextPage').addEventListener('click', () => {
-    cdrState.page += 1;
-    loadCdr();
-  });
-
-  document.querySelectorAll('#cdrTable th[data-sort]').forEach((th) => {
-    th.style.cursor = 'pointer';
-    th.addEventListener('click', () => {
-      const sortBy = th.dataset.sort;
-      cdrState.sortOrder = cdrState.sortBy === sortBy && cdrState.sortOrder === 'asc' ? 'desc' : 'asc';
-      cdrState.sortBy = sortBy;
-      loadCdr();
-    });
-  });
 
   el('addAgentBtn').addEventListener('click', async () => {
     const name = prompt('Nombre del agente');
     const extension = prompt('Extensión');
     if (!name || !extension) return;
     await api('/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, extension }) });
-    await loadAgents();
     notify('Agente creado');
+    await loadAgents();
   });
 
   document.addEventListener('click', async (event) => {
     if (event.target.classList.contains('delete-agent')) {
-      const ok = await confirmAction('¿Estás seguro de que deseas eliminar este agente? Esta acción no se puede deshacer.');
-      if (!ok) return;
+      if (!(await confirmAction('¿Eliminar este agente?'))) return;
       await api(`/agents/${event.target.dataset.id}`, { method: 'DELETE' });
-      await loadAgents();
       notify('Agente eliminado');
+      await loadAgents();
     }
 
     if (event.target.classList.contains('delete-user')) {
-      const ok = await confirmAction('¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.');
-      if (!ok) return;
+      if (!(await confirmAction('¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.'))) return;
       try {
         await api(`/users/${event.target.dataset.id}`, { method: 'DELETE' });
-        await loadUsers();
         notify('Usuario eliminado');
+        await loadUsers();
       } catch (error) {
         notify(error.message, true);
       }
+    }
+
+    if (event.target.classList.contains('edit-user')) {
+      const id = event.target.dataset.id;
+      const name = prompt('Nuevo nombre');
+      const email = prompt('Nuevo correo');
+      const role = prompt('Rol (admin/supervisor/viewer)');
+      await api(`/users/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, role }) });
+      notify('Usuario actualizado');
+      await loadUsers();
+    }
+
+    if (event.target.classList.contains('pass-user')) {
+      const id = event.target.dataset.id;
+      const password = prompt('Nueva contraseña (mínimo 6)');
+      if (!password) return;
+      await api(`/users/${id}/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+      notify('Contraseña actualizada');
     }
   });
 
@@ -292,40 +360,34 @@ const initEvents = () => {
     const role = prompt('Rol (admin/supervisor/viewer)', 'viewer');
     if (!name || !email || !password) return;
     await api('/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, password, role }) });
-    await loadUsers();
     notify('Usuario creado');
+    await loadUsers();
   });
 
   el('importBtn').addEventListener('click', async () => {
     const file = el('csvFile').files[0];
     if (!file) return;
-    const ok = await confirmAction('¿Deseas importar este archivo CSV? Si contiene registros duplicados se añadirán nuevamente.');
-    if (!ok) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    await api('/import/cdr', { method: 'POST', body: formData });
+    if (!(await confirmAction('¿Importar archivo CSV?'))) return;
+    const data = new FormData();
+    data.append('file', file);
+    await api('/import/cdr', { method: 'POST', body: data });
     notify('CSV importado');
     await Promise.all([loadDashboard(), loadCdr()]);
   });
 
-  el('exportBtn').addEventListener('click', async () => {
-    const response = await api('/export/cdr');
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'cdr_export.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  });
+  el('exportCsvBtn').addEventListener('click', () => downloadFrom('/export/cdr', 'reporte_llamadas.csv'));
+  el('exportXlsxBtn').addEventListener('click', () => downloadFrom('/export/cdr/xlsx', 'reporte_llamadas.xlsx'));
+  el('exportPdfBtn').addEventListener('click', () => downloadFrom('/export/cdr/pdf', 'reporte_llamadas.pdf'));
 
   el('saveSettingsBtn').addEventListener('click', async () => {
+    const payloads = [
+      { key: 'ucm_ip', value: el('ucmIp').value.trim() },
+      { key: 'ucm_port', value: el('ucmPort').value.trim() },
+      { key: 'ucm_api_user', value: el('apiUsername').value.trim() },
+      { key: 'ucm_api_password', value: el('apiPassword').value.trim() },
+    ];
+
     try {
-      const payloads = [
-        { key: 'ucm_ip', value: el('ucmIp').value.trim() },
-        { key: 'api_username', value: el('apiUsername').value.trim() },
-        { key: 'api_password', value: el('apiPassword').value.trim() },
-      ];
       for (const payload of payloads) {
         await api('/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       }
@@ -337,10 +399,10 @@ const initEvents = () => {
 
   el('testConnectionBtn').addEventListener('click', async () => {
     try {
-      const response = await api('/settings/test-connection', { method: 'POST' });
-      const data = (await response.json()).data;
-      el('testConnectionResult').innerHTML = `<div class="alert alert-success py-2">${data.message}</div>`;
-      notify('Conexión verificada');
+      const response = await api('/ucm/test-connection', { method: 'POST' });
+      const result = (await response.json()).data;
+      el('testConnectionResult').innerHTML = `<div class="alert ${result.success ? 'alert-success' : 'alert-danger'} py-2">${result.message}</div>`;
+      notify(result.success ? 'Conexión exitosa' : 'Error de conexión', !result.success);
     } catch (error) {
       el('testConnectionResult').innerHTML = `<div class="alert alert-danger py-2">${error.message}</div>`;
       notify('Error de conexión', true);
@@ -349,7 +411,7 @@ const initEvents = () => {
 };
 
 initEvents();
-document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((node) => new bootstrap.Tooltip(node));
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((n) => new bootstrap.Tooltip(n));
 applyTheme(localStorage.getItem('theme') || 'light');
 
 if (token) {
