@@ -10,7 +10,14 @@ const testConnection = async (_req, res, next) => {
 
 const importCdr = async (_req, res, next) => {
   try {
-    res.json({ data: await ucmService.importCDR() });
+    res.status(202).json({ data: { accepted: true, message: 'Importación en proceso' } });
+    setImmediate(async () => {
+      try {
+        await ucmService.importCDR();
+      } catch (error) {
+        console.error('[UCM] import background error', error.message);
+      }
+    });
   } catch (error) {
     next(error);
   }

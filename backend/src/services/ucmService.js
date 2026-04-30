@@ -38,7 +38,7 @@ const assertLicenseEnabled = () => {
 };
 
 const postApi = async (baseUrl, payload) => axios.post(`${baseUrl}/api`, payload, {
-  timeout: 5000,
+  timeout: 20000,
   headers: { 'Content-Type': 'application/json' },
   httpsAgent: new https.Agent({ rejectUnauthorized: false }),
 });
@@ -131,6 +131,7 @@ const importCDR = async () => {
   const cookie = await login(baseUrl, map.ucm_api_user, map.ucm_api_password);
   const rows = await fetchCDR(baseUrl, cookie, { numRecords: 100, offset: 0 });
   const transformed = rows.map(transformRecord).filter((r) => r.uniqueid && r.start_time);
+  console.log(`[UCM] registros recibidos: ${rows.length}`);
 
   const lastImported = nullIfEmpty(map.ucm_last_imported_start_time);
   const filtered = lastImported
@@ -138,6 +139,7 @@ const importCDR = async () => {
     : transformed;
 
   const inserted = await cdrModel.insertManyCdr(filtered);
+  console.log(`[UCM] registros insertados: ${inserted}`);
 
   if (filtered.length) {
     const newest = filtered.map((row) => new Date(row.start_time)).sort((a, b) => b - a)[0];

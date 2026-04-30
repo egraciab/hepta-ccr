@@ -1,22 +1,22 @@
 const pool = require('../config/db');
 
 const listAgents = async () => {
-  const { rows } = await pool.query('SELECT id, name, extension FROM agents ORDER BY name ASC');
+  const { rows } = await pool.query('SELECT id, name, role, extension FROM agents ORDER BY name ASC');
   return rows;
 };
 
-const createAgent = async ({ name, extension }) => {
+const createAgent = async ({ name, role, extension }) => {
   const { rows } = await pool.query(
-    'INSERT INTO agents (name, extension) VALUES ($1, $2) RETURNING id, name, extension',
-    [name, extension]
+    'INSERT INTO agents (name, role, extension) VALUES ($1, $2, $3) RETURNING id, name, role, extension',
+    [name, role || 'Agente', extension]
   );
   return rows[0];
 };
 
-const updateAgent = async (id, { name, extension }) => {
+const updateAgent = async (id, { name, role, extension }) => {
   const { rows } = await pool.query(
-    'UPDATE agents SET name = $1, extension = $2 WHERE id = $3 RETURNING id, name, extension',
-    [name, extension, id]
+    'UPDATE agents SET name = $1, role = $2, extension = $3 WHERE id = $4 RETURNING id, name, role, extension',
+    [name, role || 'Agente', extension, id]
   );
   return rows[0];
 };

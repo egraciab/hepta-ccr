@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS agents (
     id SERIAL PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
+    role VARCHAR(50) DEFAULT 'Agente',
     extension VARCHAR(20) NOT NULL UNIQUE
 );
 
@@ -41,13 +42,13 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
-INSERT INTO agents (name, extension)
+INSERT INTO agents (name, role, extension)
 SELECT * FROM (VALUES
-  ('Alice Johnson', '1001'),
-  ('Bob Smith', '1002'),
-  ('Carla Reyes', '1003'),
-  ('Diego Silva', '1004'),
-  ('Eva Brown', '1005')
+  ('Alice Johnson', 'Ventas', '1001'),
+  ('Bob Smith', 'Soporte', '1002'),
+  ('Carla Reyes', 'Cobranza', '1003'),
+  ('Diego Silva', 'N2', '1004'),
+  ('Eva Brown', 'Atención', '1005')
 ) AS data(name, extension)
 WHERE NOT EXISTS (SELECT 1 FROM agents);
 

@@ -21,7 +21,7 @@
     </div>
 
     <div id="appView" class="d-none">
-      <div class="d-flex align-items-center gap-2 p-2"><img src="/public/assets/logo.png" alt="logo" style="height:32px"/><strong>HEPTA CCR</strong></div>
+      <div class="d-flex align-items-center gap-2 p-2"><img src="assets/logo.png" alt="logo" style="height:32px"/><strong>HEPTA CCR</strong></div>
       <div id="licenseBanner" class="alert alert-warning m-2 d-none"></div>
       <div class="layout">
         <aside id="sidebar" class="sidebar">
@@ -30,7 +30,6 @@
           <button class="menu-item" data-section="cdr"><i class="bi bi-telephone"></i> Registro de Llamadas</button>
           <button class="menu-item" data-section="agents"><i class="bi bi-person-badge"></i> Agentes</button>
           <button class="menu-item" data-section="users" data-admin-only="true"><i class="bi bi-people"></i> Usuarios</button>
-          <button class="menu-item" data-section="import"><i class="bi bi-upload"></i> Importar Datos</button>
           
           <button class="menu-item" data-section="settings" data-admin-only="true"><i class="bi bi-gear"></i> Configuración</button>
         </aside>
@@ -86,7 +85,9 @@
             </div></div>
           </section>
 
-          <section id="agentsSection" class="app-section d-none"><div class="card app-card shadow-soft"><div class="card-body"><div class="d-flex justify-content-between mb-2"><h5>Agentes</h5><button id="addAgentBtn" class="btn btn-sm btn-primary">Agregar agente</button></div><div class="table-responsive"><table class="table table-hover"><thead><tr><th>Nombre</th><th>Extensión</th><th>Acción</th></tr></thead><tbody id="agentsTable"></tbody></table></div></div></div></section>
+          <section id="agentsSection" class="app-section d-none"><div class="card app-card shadow-soft"><div class="card-body"><div class="d-flex justify-content-between mb-2"><h5>Agentes</h5><button id="addAgentBtn" class="btn btn-sm btn-primary">Agregar agente</button></div><div class="table-responsive"><table class="table table-hover"><thead><tr><th>Nombre</th><th>Rol</th><th>Extensión</th><th>Acción</th></tr></thead><tbody id="agentsTable"></tbody></table></div></div></div></section>
+
+          <div class="modal fade" id="agentModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="agentModalTitle">Agente</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="hidden" id="agentId"/><div class="mb-2"><label class="form-label">Nombre</label><input id="agentName" class="form-control"/></div><div class="mb-2"><label class="form-label">Rol</label><input id="agentRole" class="form-control"/></div><div class="mb-2"><label class="form-label">Extensión</label><input id="agentExtension" class="form-control"/></div></div><div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button id="saveAgentBtn" class="btn btn-primary">Guardar</button></div></div></div></div>
 
           <section id="usersSection" class="app-section d-none"><div class="card app-card shadow-soft"><div class="card-body"><div class="d-flex justify-content-between mb-2"><h5>Usuarios</h5><button id="addUserBtn" class="btn btn-sm btn-primary">Crear usuario</button></div><div class="table-responsive"><table class="table table-hover"><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Creado</th><th>Acciones</th></tr></thead><tbody id="usersTable"></tbody></table></div></div></div></section>
 

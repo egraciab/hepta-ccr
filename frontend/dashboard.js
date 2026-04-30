@@ -199,7 +199,7 @@ const loadAgents = async () => {
   const response = await api('/agents');
   const agents = (await response.json()).data;
   agentsCache = agents;
-  el('agentsTable').innerHTML = agents.map((a) => `<tr><td>${a.name}</td><td>${a.extension}</td><td><button data-id="${a.id}" class="btn btn-sm btn-outline-danger delete-agent">Eliminar</button></td></tr>`).join('');
+  el('agentsTable').innerHTML = agents.map((a) => `<tr><td>${a.name}</td><td>${a.role || ''}</td><td>${a.extension}</td><td><button data-id="${a.id}" class="btn btn-sm btn-outline-primary edit-agent">Editar</button> <button data-id="${a.id}" class="btn btn-sm btn-outline-danger delete-agent">Eliminar</button></td></tr>`).join('');
 
   const agentFilter = el('agentFilter');
   const current = agentFilter.value;
@@ -285,15 +285,9 @@ const initEvents = () => {
   document.querySelectorAll('.menu-item').forEach((item) => item.addEventListener('click', () => openSection(item.dataset.section)));
 
   el('refreshDashboard').addEventListener('click', loadDashboard);
-  el('importCdrBtn').addEventListener('click', async () => {
-    try {
-      const response = await api('/ucm/import', { method: 'POST' });
-      const result = (await response.json()).data;
-      notify(`Importación completada: ${result.imported} registros`);
-      await Promise.all([loadDashboard(), loadCdr()]);
-    } catch (error) {
-      notify(error.message, true);
-    }
+  el('importCdrBtn').addEventListener('click', () => {
+    notify('Importación en proceso');
+    api('/ucm/import', { method: 'POST' }).catch((error) => notify(error.message, true));
   });
 
   el('autoSyncToggle').addEventListener('change', (event) => {
@@ -328,17 +322,47 @@ const initEvents = () => {
     loadCdr().catch((e) => notify(e.message, true));
   }));
 
-  el('addAgentBtn').addEventListener('click', async () => {
-    const name = prompt('Nombre del agente');
-    const extension = prompt('Extensión');
-    if (!name || !extension) return;
-    await api('/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, extension }) });
-    notify('Agente creado');
-    await loadAgents();
+  const agentModal = new bootstrap.Modal(el('agentModal'));
+
+  el('addAgentBtn').addEventListener('click', () => {
+    el('agentModalTitle').textContent = 'Crear agente';
+    el('agentId').value = '';
+    el('agentName').value = '';
+    el('agentRole').value = '';
+    el('agentExtension').value = '';
+    agentModal.show();
+  });
+
+  el('saveAgentBtn').addEventListener('click', async () => {
+    try {
+      const id = el('agentId').value;
+      const payload = { name: el('agentName').value, role: el('agentRole').value, extension: el('agentExtension').value };
+      if (id) {
+        await api(`/agents/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      } else {
+        await api('/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      }
+      agentModal.hide();
+      notify('Agente guardado');
+      await loadAgents();
+    } catch (error) {
+      notify(error.message, true);
+    }
   });
 
   document.addEventListener('click', async (event) => {
     try {
+      if (event.target.classList.contains('edit-agent')) {
+        const id = event.target.dataset.id;
+        const row = event.target.closest('tr').children;
+        el('agentModalTitle').textContent = 'Editar agente';
+        el('agentId').value = id;
+        el('agentName').value = row[0].textContent;
+        el('agentRole').value = row[1].textContent;
+        el('agentExtension').value = row[2].textContent;
+        agentModal.show();
+      }
+
       if (event.target.classList.contains('delete-agent')) {
         if (!(await confirmAction('¿Eliminar este agente?'))) return;
         await api(`/agents/${event.target.dataset.id}`, { method: 'DELETE' });
