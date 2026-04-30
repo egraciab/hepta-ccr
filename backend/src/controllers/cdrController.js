@@ -17,40 +17,17 @@ const parseFilters = (query) => ({
 });
 
 const statusLabel = {
-  answered: 'contestadas',
-  missed: 'perdidas',
-  busy: 'ocupado',
-};
-
-const applyExtraFilters = (items, filters) => {
-  const hour = Number.parseInt(filters.hour, 10);
-
-  return items.filter((row) => {
-    if (Number.isInteger(hour) && (hour < 0 || hour > 23 || new Date(row.call_date).getHours() !== hour)) {
-      return false;
-    }
-
-    if (filters.agentId && String(row.agent_id || '') !== String(filters.agentId)) {
-      return false;
-    }
-
-    return true;
-  });
+  contestada: 'contestada',
+  no_contestada: 'no contestada',
+  fallida: 'fallida',
+  ocupado: 'ocupado',
 };
 
 const listCdr = async (req, res, next) => {
   try {
     const filters = parseFilters(req.query);
     const data = await cdrService.getCdr(filters);
-    const filteredItems = applyExtraFilters(data.items, filters);
-
-    res.json({
-      data: {
-        ...data,
-        items: filteredItems,
-        total: filteredItems.length,
-      },
-    });
+    res.json({ data });
   } catch (error) {
     next(error);
   }
@@ -149,7 +126,7 @@ const importCsv = async (req, res, next) => {
 const getExportRows = async (query) => {
   const filters = parseFilters(query);
   const result = await cdrService.getCdr({ ...filters, page: 1, limit: 5000 });
-  return applyExtraFilters(result.items, filters);
+  return result.items;
 };
 
 const exportCsv = async (req, res, next) => {

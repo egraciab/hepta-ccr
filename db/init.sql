@@ -13,24 +13,33 @@ CREATE TABLE IF NOT EXISTS agents (
     extension VARCHAR(20) NOT NULL UNIQUE
 );
 
-CREATE TABLE IF NOT EXISTS cdr_records (
+CREATE TABLE IF NOT EXISTS cdr (
     id SERIAL PRIMARY KEY,
-    call_date TIMESTAMP NOT NULL,
-    source VARCHAR(25) NOT NULL,
-    destination VARCHAR(25) NOT NULL,
-    duration INTEGER NOT NULL CHECK (duration >= 0),
-    status VARCHAR(20) NOT NULL CHECK (status IN ('answered', 'missed', 'busy')),
-    agent VARCHAR(120) NOT NULL
+    uniqueid VARCHAR(50) UNIQUE NOT NULL,
+    src VARCHAR(50),
+    dst VARCHAR(50),
+    start_time TIMESTAMP,
+    answer_time TIMESTAMP NULL,
+    end_time TIMESTAMP,
+    duration INT,
+    billsec INT,
+    disposition VARCHAR(20),
+    channel_ext VARCHAR(50),
+    dstchannel_ext VARCHAR(50),
+    action_type VARCHAR(20),
+    device_info VARCHAR(50),
+    raw JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_cdr_start_time ON cdr(start_time);
+CREATE INDEX IF NOT EXISTS idx_cdr_disposition ON cdr(disposition);
+CREATE INDEX IF NOT EXISTS idx_cdr_src ON cdr(src);
 
 CREATE TABLE IF NOT EXISTS settings (
     key VARCHAR(120) PRIMARY KEY,
     value TEXT NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_cdr_call_date ON cdr_records(call_date);
-CREATE INDEX IF NOT EXISTS idx_cdr_agent ON cdr_records(agent);
-CREATE INDEX IF NOT EXISTS idx_cdr_status ON cdr_records(status);
 
 INSERT INTO agents (name, extension)
 SELECT * FROM (VALUES
@@ -44,27 +53,31 @@ WHERE NOT EXISTS (SELECT 1 FROM agents);
 
 INSERT INTO settings (key, value)
 SELECT * FROM (VALUES
-  ('ucm_ip', '192.168.1.20'),
-  ('ucm_port', '8089'),
+  ('ucm_base_url', 'https://192.168.1.20:8089'),
   ('ucm_api_user', 'hepta_api'),
-  ('ucm_api_password', 'change_me')
+  ('ucm_api_password', 'change_me'),
+  ('ucm_last_imported_start_time', '')
 ) AS data(key, value)
 ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO cdr_records (call_date, source, destination, duration, status, agent)
+INSERT INTO cdr (
+  uniqueid, src, dst, start_time, answer_time, end_time, duration, billsec,
+  disposition, channel_ext, dstchannel_ext, action_type, device_info, raw
+)
 SELECT
-  NOW() - (interval '1 hour' * (g % 240)) - (interval '1 minute' * ((g * 13) % 60)),
+  CONCAT('seed-', g),
   CONCAT('+1', 2000000000 + g),
   CONCAT('+1', 3000000000 + g),
-  CASE
-    WHEN g % 5 = 0 THEN 0
-    ELSE 30 + ((g * 19) % 420)
-  END,
-  CASE
-    WHEN g % 7 = 0 THEN 'busy'
-    WHEN g % 4 = 0 THEN 'missed'
-    ELSE 'answered'
-  END,
-  (ARRAY['Alice Johnson', 'Bob Smith', 'Carla Reyes', 'Diego Silva', 'Eva Brown'])[1 + (g % 5)]
+  NOW() - (interval '1 hour' * (g % 240)) - (interval '1 minute' * ((g * 13) % 60)),
+  CASE WHEN g % 4 = 0 THEN NULL ELSE NOW() - (interval '1 hour' * (g % 240)) END,
+  NOW() - (interval '1 hour' * (g % 240)) + interval '2 minute',
+  CASE WHEN g % 4 = 0 THEN 0 ELSE 30 + ((g * 19) % 420) END,
+  CASE WHEN g % 4 = 0 THEN 0 ELSE 20 + ((g * 17) % 360) END,
+  CASE WHEN g % 7 = 0 THEN 'ocupado' WHEN g % 4 = 0 THEN 'no_contestada' ELSE 'contestada' END,
+  'SIP/1001',
+  'SIP/2001',
+  'OUT',
+  'UCM6301',
+  jsonb_build_object('seed', true)
 FROM generate_series(1, 200) g
-WHERE NOT EXISTS (SELECT 1 FROM cdr_records);
+ON CONFLICT (uniqueid) DO NOTHING;

@@ -7,6 +7,6 @@ const router = express.Router();
 
 router.use(authMiddleware, requireRole('admin', 'supervisor'));
 router.post('/test-connection', requireFeature('ucm_api'), ucmController.testConnection);
-router.post('/sync-cdr', requireFeature('ucm_api'), ucmController.fetchCdr);
+router.post('/import', requireFeature('ucm_api'), ucmController.importCdr);
 
 module.exports = router;

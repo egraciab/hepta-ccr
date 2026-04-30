@@ -7,8 +7,9 @@ let charts = {};
 let loadingCount = 0;
 let cdrState = { page: 1, limit: 15, sortBy: 'call_date', sortOrder: 'desc', hour: '' };
 let agentsCache = [];
+let autoSyncTimer = null;
 
-const statusMap = { answered: 'contestadas', missed: 'perdidas', busy: 'ocupado' };
+const statusMap = { contestada: 'contestada', no_contestada: 'no contestada', fallida: 'fallida', ocupado: 'ocupado', answered: 'contestadas', missed: 'perdidas', busy: 'ocupado' };
 
 const el = (id) => document.getElementById(id);
 const spinner = el('spinner');
@@ -190,7 +191,7 @@ const cdrQuery = () => {
 const loadCdr = async () => {
   const response = await api(`/cdr?${cdrQuery().toString()}`);
   const payload = (await response.json()).data;
-  el('cdrTable').querySelector('tbody').innerHTML = payload.items.map((row) => `<tr><td>${new Date(row.call_date).toLocaleString('es-ES')}</td><td>${row.source}</td><td>${row.destination}</td><td>${row.duration}</td><td>${statusMap[row.status] || row.status}</td><td>${row.agent}</td></tr>`).join('');
+  el('cdrTable').querySelector('tbody').innerHTML = payload.items.map((row) => `<tr><td>${new Date(row.call_date).toLocaleString('es-ES')}</td><td>${row.source}</td><td>${row.destination}</td><td>${formatDuration(row.duration)}</td><td>${statusMap[row.status] || row.status}</td><td>${row.agent}</td></tr>`).join('');
   el('cdrPageInfo').textContent = `Página ${payload.page} / ${Math.max(1, Math.ceil(payload.total / payload.limit))}`;
 };
 
@@ -226,6 +227,14 @@ const loadSettings = async () => {
   el('ucmBaseUrl').value = map.ucm_base_url || '';
   el('apiUsername').value = map.ucm_api_user || '';
   el('apiPassword').value = map.ucm_api_password || '';
+};
+
+const formatDuration = (sec) => {
+  const s = Number(sec || 0);
+  const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
 };
 
 const openSection = (name) => {
@@ -276,18 +285,30 @@ const initEvents = () => {
   document.querySelectorAll('.menu-item').forEach((item) => item.addEventListener('click', () => openSection(item.dataset.section)));
 
   el('refreshDashboard').addEventListener('click', loadDashboard);
-  el('generateMock').addEventListener('click', async () => {
-    await api('/cdr/mock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: 100 }) });
-    notify('Llamadas de prueba generadas');
-    await Promise.all([loadDashboard(), loadCdr()]);
+  el('importCdrBtn').addEventListener('click', async () => {
+    try {
+      const response = await api('/ucm/import', { method: 'POST' });
+      const result = (await response.json()).data;
+      notify(`Importación completada: ${result.imported} registros`);
+      await Promise.all([loadDashboard(), loadCdr()]);
+    } catch (error) {
+      notify(error.message, true);
+    }
   });
 
-  el('resetDataBtn').addEventListener('click', async () => {
-    if (!(await confirmAction('¿Está seguro?'))) return;
-    if (!(await confirmAction('Esta acción es irreversible. ¿Desea continuar?'))) return;
-    await api('/cdr/reset', { method: 'POST' });
-    notify('Datos reiniciados');
-    await Promise.all([loadDashboard(), loadCdr()]);
+  el('autoSyncToggle').addEventListener('change', (event) => {
+    if (event.target.checked) {
+      autoSyncTimer = setInterval(() => {
+        api('/ucm/import', { method: 'POST' })
+          .then(() => Promise.all([loadDashboard(), loadCdr()]))
+          .catch((error) => notify(error.message, true));
+      }, 30000);
+      notify('Auto-sync habilitado');
+    } else {
+      clearInterval(autoSyncTimer);
+      autoSyncTimer = null;
+      notify('Auto-sync deshabilitado');
+    }
   });
 
   el('cdrFilterBtn').addEventListener('click', applyCdrFilters);
@@ -334,35 +355,59 @@ const initEvents = () => {
 
       if (event.target.classList.contains('edit-user')) {
         const id = event.target.dataset.id;
-        const name = prompt('Nuevo nombre');
-        const email = prompt('Nuevo correo');
-        const role = prompt('Rol (admin/supervisor/viewer)');
-        await api(`/users/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, role }) });
-        notify('Usuario actualizado');
-        await loadUsers();
+        const row = event.target.closest('tr').children;
+        el('userModalTitle').textContent = 'Editar usuario';
+        el('userId').value = id;
+        el('userName').value = row[0].textContent;
+        el('userEmail').value = row[1].textContent;
+        el('userRole').value = row[2].textContent;
+        el('userPassword').value = '';
+        userModal.show();
       }
 
       if (event.target.classList.contains('pass-user')) {
         const id = event.target.dataset.id;
-        const password = prompt('Nueva contraseña (mínimo 6)');
-        if (!password) return;
-        await api(`/users/${id}/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-        notify('Contraseña actualizada');
+        el('userModalTitle').textContent = 'Cambiar contraseña';
+        el('userId').value = id;
+        el('userPassword').value = '';
+        userModal.show();
       }
     } catch (error) {
       notify(error.message, true);
     }
   });
 
-  el('addUserBtn').addEventListener('click', async () => {
+  const userModal = new bootstrap.Modal(el('userModal'));
+
+  el('addUserBtn').addEventListener('click', () => {
+    el('userModalTitle').textContent = 'Crear usuario';
+    el('userId').value = '';
+    el('userName').value = '';
+    el('userEmail').value = '';
+    el('userRole').value = 'viewer';
+    el('userPassword').value = '';
+    userModal.show();
+  });
+
+  el('toggleUserPassword').addEventListener('click', () => {
+    const input = el('userPassword');
+    input.type = input.type === 'password' ? 'text' : 'password';
+  });
+
+  el('saveUserBtn').addEventListener('click', async () => {
     try {
-      const name = prompt('Nombre');
-      const email = prompt('Correo');
-      const password = prompt('Contraseña');
-      const role = prompt('Rol (admin/supervisor/viewer)', 'viewer');
-      if (!name || !email || !password) return;
-      await api('/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, password, role }) });
-      notify('Usuario creado');
+      const id = el('userId').value;
+      const payload = { name: el('userName').value, email: el('userEmail').value, role: el('userRole').value };
+      if (!id) {
+        await api('/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, password: el('userPassword').value || 'changeme123' }) });
+      } else {
+        await api(`/users/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (el('userPassword').value) {
+          await api(`/users/${id}/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: el('userPassword').value }) });
+        }
+      }
+      userModal.hide();
+      notify('Usuario guardado');
       await loadUsers();
     } catch (error) {
       notify(error.message, true);

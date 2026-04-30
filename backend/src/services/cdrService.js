@@ -1,56 +1,29 @@
 const cdrModel = require('../models/cdrModel');
 const { parse } = require('csv-parse/sync');
 
-const AGENTS = ['Alice Johnson', 'Bob Smith', 'Carla Reyes', 'Diego Silva', 'Eva Brown'];
-const STATUSES = ['answered', 'missed', 'busy'];
-
-const random = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-const generateMockRecords = (count = 100) => {
-  const size = Math.min(Math.max(Number.parseInt(count, 10) || 100, 1), 5000);
-  return Array.from({ length: size }, (_, i) => {
-    const duration = Math.random() < 0.2 ? 0 : 20 + Math.floor(Math.random() * 500);
-    const minutesOffset = Math.floor(Math.random() * 60 * 24 * 15);
-
-    return {
-      call_date: new Date(Date.now() - minutesOffset * 60000).toISOString(),
-      source: `+12${String(10000000 + i)}`,
-      destination: `+13${String(10000000 + i)}`,
-      duration,
-      status: random(STATUSES),
-      agent: random(AGENTS),
-    };
-  });
-};
-
 const parseCsvBuffer = (buffer) => {
-  const records = parse(buffer, {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true,
-  });
-
-  return records.map((row) => ({
-    call_date: row.call_date,
-    source: row.source,
-    destination: row.destination,
+  const rows = parse(buffer, { columns: true, skip_empty_lines: true, trim: true });
+  return rows.map((row, idx) => ({
+    uniqueid: row.uniqueid || `csv-${Date.now()}-${idx}`,
+    src: row.src || row.source || null,
+    dst: row.dst || row.destination || null,
+    start_time: row.start_time || row.call_date || null,
+    answer_time: row.answer_time || null,
+    end_time: row.end_time || null,
     duration: Number(row.duration || 0),
-    status: row.status,
-    agent: row.agent,
+    billsec: Number(row.billsec || 0),
+    disposition: row.disposition || row.status || 'no_contestada',
+    channel_ext: row.channel_ext || row.agent || null,
+    dstchannel_ext: row.dstchannel_ext || null,
+    action_type: row.action_type || null,
+    device_info: row.device_info || null,
+    raw: row,
   }));
-};
-
-const resetAndSeedCdr = async () => {
-  await cdrModel.resetCdrData();
-  const seeded = generateMockRecords(200);
-  return cdrModel.insertManyCdr(seeded);
 };
 
 module.exports = {
   getCdr: cdrModel.getCdr,
   getDashboardStats: cdrModel.getDashboardStats,
   insertManyCdr: cdrModel.insertManyCdr,
-  generateMockRecords,
   parseCsvBuffer,
-  resetAndSeedCdr,
 };

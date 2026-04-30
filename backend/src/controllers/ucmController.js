@@ -8,12 +8,12 @@ const testConnection = async (_req, res, next) => {
   }
 };
 
-const fetchCdr = async (_req, res, next) => {
+const importCdr = async (_req, res, next) => {
   try {
-    res.json({ data: await ucmService.fetchCDRFromUCM() });
+    res.json({ data: await ucmService.importCDR() });
   } catch (error) {
     next(error);
   }
 };
 
-module.exports = { testConnection, fetchCdr };
+module.exports = { testConnection, importCdr };
