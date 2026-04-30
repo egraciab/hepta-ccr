@@ -3,6 +3,7 @@ const https = require('https');
 const crypto = require('crypto');
 const settingModel = require('../models/settingModel');
 const cdrModel = require('../models/cdrModel');
+const pool = require('../config/db');
 const licenseService = require('./licenseService');
 
 const statusMap = {
@@ -11,6 +12,15 @@ const statusMap = {
   'NO ANSWER': 'no_contestada',
   BUSY: 'ocupado',
 };
+
+let lastRawResponse = null;
+let lastFieldStats = {
+  detectedFields: [],
+  fieldCounts: {},
+  sampleRecord: null,
+};
+
+const isDebugEnabled = () => String(process.env.UCM_DEBUG || 'false').toLowerCase() === 'true';
 
 const nullIfEmpty = (value) => {
   if (value === undefined || value === null) return null;
@@ -21,7 +31,8 @@ const nullIfEmpty = (value) => {
 const parseDate = (value) => {
   const normalized = nullIfEmpty(value);
   if (!normalized) return null;
-  return new Date(normalized);
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const getSettingsMap = async () => {
@@ -42,6 +53,33 @@ const postApi = async (baseUrl, payload) => axios.post(`${baseUrl}/api`, payload
   headers: { 'Content-Type': 'application/json' },
   httpsAgent: new https.Agent({ rejectUnauthorized: false }),
 });
+
+const saveRawPayload = async (payload) => {
+  await pool.query('INSERT INTO cdr_raw (payload) VALUES ($1)', [payload]);
+};
+
+const detectFields = (records) => {
+  const counts = {};
+  const allKeys = new Set();
+
+  records.forEach((record) => {
+    Object.keys(record || {}).forEach((key) => {
+      allKeys.add(key);
+      counts[key] = (counts[key] || 0) + 1;
+    });
+  });
+
+  const detectedFields = Array.from(allKeys).sort();
+  lastFieldStats = {
+    detectedFields,
+    fieldCounts: counts,
+    sampleRecord: records[0] || null,
+  };
+
+  if (isDebugEnabled()) {
+    console.log('Detected fields:', detectedFields);
+  }
+};
 
 const getChallenge = async (baseUrl, user) => {
   const response = await postApi(baseUrl, {
@@ -87,28 +125,46 @@ const fetchCDR = async (baseUrl, cookie, options = {}) => {
     },
   });
 
+  lastRawResponse = response.data;
+  await saveRawPayload(response.data);
+
+  if (isDebugEnabled()) {
+    console.log('==== UCM RAW RESPONSE START ====');
+    console.dir(response.data, { depth: null });
+    console.log('==== UCM RAW RESPONSE END ====');
+  }
+
   const records = response.data?.response?.cdrs || response.data?.response?.records || [];
-  return Array.isArray(records) ? records : [];
+  const normalizedRecords = Array.isArray(records) ? records : [];
+  detectFields(normalizedRecords);
+  return normalizedRecords;
 };
 
-const transformRecord = (row) => {
-  const dispositionRaw = nullIfEmpty(row.disposition || row.Disposition || row.status || 'NO ANSWER');
-  return {
-    uniqueid: nullIfEmpty(row.uniqueid || row.Uniqueid || row.recordid || row.id),
-    src: nullIfEmpty(row.src || row.Source || row.calleridnum),
-    dst: nullIfEmpty(row.dst || row.Destination || row.dstnum),
-    start_time: parseDate(row.start || row.start_time || row.calldate),
-    answer_time: parseDate(row.answer || row.answer_time),
-    end_time: parseDate(row.end || row.end_time),
-    duration: Number.parseInt(row.duration || '0', 10) || 0,
-    billsec: Number.parseInt(row.billsec || '0', 10) || 0,
-    disposition: statusMap[dispositionRaw] || dispositionRaw?.toLowerCase()?.replace(/\s+/g, '_') || 'no_contestada',
-    channel_ext: nullIfEmpty(row.channel || row.channel_ext),
-    dstchannel_ext: nullIfEmpty(row.dstchannel || row.dstchannel_ext),
-    action_type: nullIfEmpty(row.action_type || row.direction),
-    device_info: nullIfEmpty(row.device_info || row.accountcode),
-    raw: row,
+const transformRecord = (record) => {
+  const dispositionRaw = nullIfEmpty(record.disposition || record.status || null);
+
+  const mapped = {
+    uniqueid: nullIfEmpty(record.uniqueid || record.Uniqueid || record.recordid || record.id),
+    src: nullIfEmpty(record.src || record.Source || record.calleridnum),
+    dst: nullIfEmpty(record.dst || record.Destination || record.dstnum),
+    start_time: parseDate(record.starttime || record.start || record.start_time || record.calldate),
+    answer_time: parseDate(record.answertime || record.answer || record.answer_time),
+    end_time: parseDate(record.endtime || record.end || record.end_time),
+    duration: Number.parseInt(record.duration || '0', 10) || 0,
+    billsec: Number.parseInt(record.billsec || '0', 10) || 0,
+    disposition: statusMap[dispositionRaw] || dispositionRaw || 'unknown',
+    channel_ext: nullIfEmpty(record.channel || record.channel_ext),
+    dstchannel_ext: nullIfEmpty(record.dstchannel || record.dstchannel_ext),
+    action_type: nullIfEmpty(record.action_type || record.direction),
+    device_info: nullIfEmpty(record.device_info || record.accountcode),
+    raw: record,
   };
+
+  if (isDebugEnabled()) {
+    console.log('[UCM] mapped record:', mapped);
+  }
+
+  return mapped;
 };
 
 const getBaseUrl = (map) => {
@@ -130,20 +186,27 @@ const importCDR = async () => {
 
   const cookie = await login(baseUrl, map.ucm_api_user, map.ucm_api_password);
   const rows = await fetchCDR(baseUrl, cookie, { numRecords: 100, offset: 0 });
-  const transformed = rows.map(transformRecord).filter((r) => r.uniqueid && r.start_time);
+  const transformed = rows.map(transformRecord).filter((row) => row.uniqueid);
+
   console.log(`[UCM] registros recibidos: ${rows.length}`);
 
   const lastImported = nullIfEmpty(map.ucm_last_imported_start_time);
   const filtered = lastImported
-    ? transformed.filter((row) => new Date(row.start_time) > new Date(lastImported))
+    ? transformed.filter((row) => row.start_time && new Date(row.start_time) > new Date(lastImported))
     : transformed;
 
   const inserted = await cdrModel.insertManyCdr(filtered);
   console.log(`[UCM] registros insertados: ${inserted}`);
 
   if (filtered.length) {
-    const newest = filtered.map((row) => new Date(row.start_time)).sort((a, b) => b - a)[0];
-    await settingModel.upsertSetting({ key: 'ucm_last_imported_start_time', value: newest.toISOString() });
+    const newest = filtered
+      .map((row) => (row.start_time ? new Date(row.start_time) : null))
+      .filter(Boolean)
+      .sort((a, b) => b - a)[0];
+
+    if (newest) {
+      await settingModel.upsertSetting({ key: 'ucm_last_imported_start_time', value: newest.toISOString() });
+    }
   }
 
   return { success: true, fetched: rows.length, imported: inserted };
@@ -158,6 +221,7 @@ const testConnection = async () => {
     error.status = 400;
     throw error;
   }
+
   try {
     await login(baseUrl, map.ucm_api_user, map.ucm_api_password);
     return { success: true, message: `Conexión exitosa con ${baseUrl}` };
@@ -166,4 +230,15 @@ const testConnection = async () => {
   }
 };
 
-module.exports = { getChallenge, login, fetchCDR, importCDR, testConnection };
+const getDebugRaw = () => ({ raw: lastRawResponse });
+const getFieldStats = () => lastFieldStats;
+
+module.exports = {
+  getChallenge,
+  login,
+  fetchCDR,
+  importCDR,
+  testConnection,
+  getDebugRaw,
+  getFieldStats,
+};

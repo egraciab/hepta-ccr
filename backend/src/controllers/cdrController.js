@@ -1,6 +1,7 @@
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
 const cdrService = require('../services/cdrService');
+const ucmService = require('../services/ucmService');
 
 const parseFilters = (query) => ({
   startDate: query.startDate,
@@ -21,6 +22,15 @@ const statusLabel = {
   no_contestada: 'no contestada',
   fallida: 'fallida',
   ocupado: 'ocupado',
+};
+
+
+const fields = async (_req, res, next) => {
+  try {
+    res.json({ data: ucmService.getFieldStats() });
+  } catch (error) {
+    next(error);
+  }
 };
 
 const listCdr = async (req, res, next) => {
@@ -193,4 +203,4 @@ const exportPdf = async (req, res, next) => {
   }
 };
 
-module.exports = { listCdr, stats, mock, reset, importCsv, exportCsv, exportXlsx, exportPdf };
+module.exports = { fields, listCdr, stats, mock, reset, importCsv, exportCsv, exportXlsx, exportPdf };

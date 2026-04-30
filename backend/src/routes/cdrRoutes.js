@@ -8,6 +8,7 @@ const upload = multer();
 const router = express.Router();
 
 router.use(authMiddleware);
+router.get('/cdr/fields', cdrController.fields);
 router.get('/cdr', cdrController.listCdr);
 router.get('/stats', cdrController.stats);
 router.post('/cdr/mock', requireRole('admin', 'supervisor'), cdrController.mock);

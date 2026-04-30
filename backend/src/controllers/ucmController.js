@@ -23,4 +23,12 @@ const importCdr = async (_req, res, next) => {
   }
 };
 
-module.exports = { testConnection, importCdr };
+const debugRaw = async (_req, res, next) => {
+  try {
+    res.json({ data: ucmService.getDebugRaw() });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { testConnection, importCdr, debugRaw };
