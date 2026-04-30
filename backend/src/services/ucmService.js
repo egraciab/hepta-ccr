@@ -7,6 +7,7 @@ const pool = require('../config/db');
 const licenseService = require('./licenseService');
 
 let lastRawResponse = null;
+let importStatus = { running: false, startedAt: null, finishedAt: null, received: 0, inserted: 0, skipped: 0, error: null };
 let lastFieldStats = {
   detectedFields: [],
   fieldCounts: {},
@@ -145,6 +146,11 @@ const transformRecord = (record) => {
     dstchannel_ext: record.dstchannel_ext,
     accountcode: record.accountcode,
     caller_name: record.caller_name,
+    action_owner: record.action_owner,
+    action_type: record.action_type,
+    src_trunk_name: record.src_trunk_name,
+    dst_trunk_name: record.dst_trunk_name,
+    device_info: record.device_info,
     lastapp: record.lastapp,
     lastdata: record.lastdata,
     raw: record,
@@ -164,6 +170,8 @@ const getBaseUrl = (map) => {
 };
 
 const importCDR = async () => {
+  importStatus = { running: true, startedAt: new Date().toISOString(), finishedAt: null, received: 0, inserted: 0, skipped: 0, error: null };
+  try {
   assertLicenseEnabled();
 
   const map = await getSettingsMap();
@@ -177,6 +185,7 @@ const importCDR = async () => {
   const cookie = await login(baseUrl, map.ucm_api_user, map.ucm_api_password);
   const rows = await fetchCDR(baseUrl, cookie, { numRecords: 100, offset: 0 });
   const transformed = rows.map(transformRecord).filter((row) => row.uniqueid);
+  importStatus.received = rows.length;
 
   console.log(`[UCM] registros recibidos: ${rows.length}`);
 
@@ -186,6 +195,8 @@ const importCDR = async () => {
     : transformed;
 
   const inserted = await cdrModel.insertManyCdr(filtered);
+  importStatus.inserted = inserted;
+  importStatus.skipped = filtered.length - inserted;
   console.log(`[UCM] registros insertados: ${inserted}`);
 
   if (filtered.length) {
@@ -199,7 +210,15 @@ const importCDR = async () => {
     }
   }
 
-  return { success: true, fetched: rows.length, imported: inserted };
+  importStatus.running = false;
+  importStatus.finishedAt = new Date().toISOString();
+  return { success: true, fetched: rows.length, imported: inserted, skipped: importStatus.skipped };
+  } catch (error) {
+    importStatus.running = false;
+    importStatus.finishedAt = new Date().toISOString();
+    importStatus.error = error.message;
+    throw error;
+  }
 };
 
 const testConnection = async () => {
@@ -222,6 +241,7 @@ const testConnection = async () => {
 
 const getDebugRaw = () => ({ raw: lastRawResponse });
 const getFieldStats = () => lastFieldStats;
+const getImportStatus = () => importStatus;
 
 module.exports = {
   getChallenge,
@@ -231,4 +251,5 @@ module.exports = {
   testConnection,
   getDebugRaw,
   getFieldStats,
+  getImportStatus,
 };

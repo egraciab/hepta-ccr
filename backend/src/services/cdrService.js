@@ -29,5 +29,6 @@ module.exports = {
   getCdr: cdrModel.getCdr,
   getDashboardStats: cdrModel.getDashboardStats,
   insertManyCdr: cdrModel.insertManyCdr,
+  clearCdr: cdrModel.clearCdr,
   parseCsvBuffer,
 };

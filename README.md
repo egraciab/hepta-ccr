@@ -15,6 +15,12 @@ docker compose up --build
 - Gestión de usuarios (admin) con edición y cambio de contraseña
 - Integración UCM configurable (IP/puerto/credenciales)
 
+## Limpieza de datos de prueba anteriores
+Si tienes datos de prueba/seed mezclados con CDR reales, ejecuta:
+```sql
+TRUNCATE TABLE cdr RESTART IDENTITY;
+```
+
 ## Endpoints nuevos
 - `GET /api/license/status`
 - `GET /api/export/cdr/xlsx`

@@ -9,7 +9,7 @@ let cdrState = { page: 1, limit: 15, sortBy: 'call_date', sortOrder: 'desc', hou
 let agentsCache = [];
 let autoSyncTimer = null;
 
-const statusMap = { contestada: 'contestada', no_contestada: 'no contestada', fallida: 'fallida', ocupado: 'ocupado', answered: 'contestadas', missed: 'perdidas', busy: 'ocupado' };
+const statusMap = { ANSWERED: 'contestada', 'NO ANSWER': 'perdida', FAILED: 'fallida', BUSY: 'ocupado' };
 
 const el = (id) => document.getElementById(id);
 const spinner = el('spinner');
@@ -165,7 +165,7 @@ const loadDashboard = async () => {
   const response = await api(`/stats?${queryFromRange().toString()}`);
   const stats = (await response.json()).data;
   el('totalCalls').textContent = stats.totalCalls;
-  el('avgDuration').textContent = stats.averageDuration;
+  el('avgDuration').textContent = formatDuration(stats.averageDuration);
   el('answeredMissed').textContent = `${stats.answeredCalls} / ${stats.missedCalls}`;
   el('topAgent').textContent = stats.topAgent;
 
@@ -191,7 +191,7 @@ const cdrQuery = () => {
 const loadCdr = async () => {
   const response = await api(`/cdr?${cdrQuery().toString()}`);
   const payload = (await response.json()).data;
-  el('cdrTable').querySelector('tbody').innerHTML = payload.items.map((row) => `<tr><td>${new Date(row.call_date).toLocaleString('es-ES')}</td><td>${row.source}</td><td>${row.destination}</td><td>${formatDuration(row.duration)}</td><td>${statusMap[row.status] || row.status}</td><td>${row.agent}</td></tr>`).join('');
+  el('cdrTable').querySelector('tbody').innerHTML = payload.items.map((row) => `<tr><td>${new Date(row.call_date).toLocaleString('es-ES')}</td><td>${row.source}</td><td>${row.destination}</td><td>${formatDuration((row.billsec > 0 ? row.billsec : row.duration))}</td><td>${statusMap[row.status] || row.status}</td><td>${row.agent || '-'}</td></tr>`).join('');
   el('cdrPageInfo').textContent = `Página ${payload.page} / ${Math.max(1, Math.ceil(payload.total / payload.limit))}`;
 };
 
@@ -287,14 +287,14 @@ const initEvents = () => {
   el('refreshDashboard').addEventListener('click', loadDashboard);
   el('importCdrBtn').addEventListener('click', () => {
     notify('Importación en proceso');
-    api('/ucm/import', { method: 'POST' }).catch((error) => notify(error.message, true));
+    api('/ucm/import', { method: 'POST' }).then(() => pollImportStatus()).catch((error) => notify(error.message, true));
   });
 
   el('autoSyncToggle').addEventListener('change', (event) => {
     if (event.target.checked) {
       autoSyncTimer = setInterval(() => {
         api('/ucm/import', { method: 'POST' })
-          .then(() => Promise.all([loadDashboard(), loadCdr()]))
+          .then(() => pollImportStatus())
           .catch((error) => notify(error.message, true));
       }, 30000);
       notify('Auto-sync habilitado');
@@ -485,6 +485,21 @@ const initEvents = () => {
       notify('Error de conexión', true);
     }
   });
+};
+
+const pollImportStatus = async () => {
+  const tick = async () => {
+    const response = await api('/ucm/import/status');
+    const data = (await response.json()).data;
+    notify(`Importando CDR... recibidos ${data.received}, insertados ${data.inserted}, omitidos ${data.skipped}`);
+    if (data.running) {
+      setTimeout(tick, 2000);
+      return;
+    }
+    if (data.error) notify(data.error, true);
+    await Promise.all([loadDashboard(), loadCdr()]);
+  };
+  await tick();
 };
 
 initEvents();

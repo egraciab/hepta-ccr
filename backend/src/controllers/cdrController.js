@@ -17,12 +17,7 @@ const parseFilters = (query) => ({
   sortOrder: query.sortOrder,
 });
 
-const statusLabel = {
-  contestada: 'contestada',
-  no_contestada: 'no contestada',
-  fallida: 'fallida',
-  ocupado: 'ocupado',
-};
+const statusLabel = { ANSWERED: 'contestada', 'NO ANSWER': 'perdida', FAILED: 'fallida', BUSY: 'ocupado' };
 
 
 const fields = async (_req, res, next) => {
@@ -97,20 +92,10 @@ const stats = async (req, res, next) => {
   }
 };
 
-const mock = async (req, res, next) => {
+const clear = async (_req, res, next) => {
   try {
-    const records = cdrService.generateMockRecords(req.body?.count || 100);
-    const inserted = await cdrService.insertManyCdr(records);
-    res.status(201).json({ data: { inserted } });
-  } catch (error) {
-    next(error);
-  }
-};
-
-const reset = async (_req, res, next) => {
-  try {
-    const inserted = await cdrService.resetAndSeedCdr();
-    res.json({ data: { inserted } });
+    await cdrService.clearCdr();
+    res.json({ data: { cleared: true } });
   } catch (error) {
     next(error);
   }
@@ -203,4 +188,4 @@ const exportPdf = async (req, res, next) => {
   }
 };
 
-module.exports = { fields, listCdr, stats, mock, reset, importCsv, exportCsv, exportXlsx, exportPdf };
+module.exports = { fields, listCdr, stats, clear, importCsv, exportCsv, exportXlsx, exportPdf };

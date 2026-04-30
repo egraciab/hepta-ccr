@@ -39,6 +39,11 @@ CREATE TABLE cdr (
     dstchannel_ext VARCHAR(20),
     accountcode VARCHAR(50),
     caller_name VARCHAR(100),
+    action_owner VARCHAR(100),
+    action_type VARCHAR(50),
+    src_trunk_name VARCHAR(100),
+    dst_trunk_name VARCHAR(100),
+    device_info TEXT,
     lastapp VARCHAR(50),
     lastdata TEXT,
     raw JSONB,
@@ -72,29 +77,3 @@ SELECT * FROM (VALUES
   ('ucm_last_imported_start_time', '')
 ) AS data(key, value)
 ON CONFLICT (key) DO NOTHING;
-
-INSERT INTO cdr (
-  uniqueid, src, dst, start_time, answer_time, end_time, duration, billsec,
-  disposition, channel, dstchannel, channel_ext, dstchannel_ext, accountcode, caller_name, lastapp, lastdata, raw
-)
-SELECT
-  CONCAT('seed-', g),
-  CONCAT('+1', 2000000000 + g),
-  CONCAT('+1', 3000000000 + g),
-  NOW() - (interval '1 hour' * (g % 240)) - (interval '1 minute' * ((g * 13) % 60)),
-  CASE WHEN g % 4 = 0 THEN NULL ELSE NOW() - (interval '1 hour' * (g % 240)) END,
-  NOW() - (interval '1 hour' * (g % 240)) + interval '2 minute',
-  CASE WHEN g % 4 = 0 THEN 0 ELSE 30 + ((g * 19) % 420) END,
-  CASE WHEN g % 4 = 0 THEN 0 ELSE 20 + ((g * 17) % 360) END,
-  CASE WHEN g % 7 = 0 THEN 'FAILED' WHEN g % 4 = 0 THEN 'NO ANSWER' ELSE 'ANSWERED' END,
-  'PJSIP/1001-00000001',
-  'PJSIP/2001-00000001',
-  'SIP/1001',
-  'SIP/2001',
-  'ACCT-001',
-  'Cliente Demo',
-  'Dial',
-  'PJSIP/2001,30',
-  jsonb_build_object('seed', true)
-FROM generate_series(1, 200) g
-ON CONFLICT (uniqueid) DO NOTHING;

@@ -9,5 +9,6 @@ router.use(authMiddleware, requireRole('admin', 'supervisor'));
 router.get('/debug', requireFeature('ucm_api'), ucmController.debugRaw);
 router.post('/test-connection', requireFeature('ucm_api'), ucmController.testConnection);
 router.post('/import', requireFeature('ucm_api'), ucmController.importCdr);
+router.get('/import/status', requireFeature('ucm_api'), ucmController.importStatus);
 
 module.exports = router;
