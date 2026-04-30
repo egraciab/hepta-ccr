@@ -43,7 +43,7 @@ const getCdr = async (filters) => {
 
   const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM cdr ${where}`, values);
   const rowsResult = await pool.query(
-    `SELECT id, uniqueid, src AS source, dst AS destination, start_time AS call_date, duration, disposition AS status, channel_ext AS agent
+    `SELECT id, uniqueid, src AS source, dst AS destination, start_time AS call_date, duration, disposition AS status, channel_ext
      FROM cdr ${where}
      ORDER BY ${sortBy} ${sortOrder}
      LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
@@ -65,8 +65,8 @@ const getDashboardStats = async (filters) => {
   const { where, values } = buildWhere(filters);
   const [totals, perAgent, perDay, perStatus, perHour] = await Promise.all([
     pool.query(`SELECT COUNT(*)::int AS total_calls, COALESCE(ROUND(AVG(duration)::numeric,2),0) AS average_duration,
-              COALESCE(SUM(CASE WHEN disposition='contestada' THEN 1 ELSE 0 END),0)::int AS answered_calls,
-              COALESCE(SUM(CASE WHEN disposition='no_contestada' THEN 1 ELSE 0 END),0)::int AS missed_calls
+              COALESCE(SUM(CASE WHEN disposition='ANSWERED' THEN 1 ELSE 0 END),0)::int AS answered_calls,
+              COALESCE(SUM(CASE WHEN disposition IN ('NO ANSWER', 'FAILED') THEN 1 ELSE 0 END),0)::int AS missed_calls
               FROM cdr ${where}`, values),
     pool.query(`SELECT channel_ext AS agent, COUNT(*)::int AS total FROM cdr ${where} GROUP BY channel_ext ORDER BY total DESC`, values),
     pool.query(`SELECT DATE(start_time) AS day, COUNT(*)::int AS total FROM cdr ${where} GROUP BY DATE(start_time) ORDER BY day ASC`, values),
@@ -92,12 +92,12 @@ const insertManyCdr = async (records) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const q = `INSERT INTO cdr (uniqueid, src, dst, start_time, answer_time, end_time, duration, billsec, disposition, channel_ext, dstchannel_ext, action_type, device_info, raw)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+    const q = `INSERT INTO cdr (uniqueid, src, dst, start_time, answer_time, end_time, duration, billsec, disposition, channel, dstchannel, channel_ext, dstchannel_ext, accountcode, caller_name, lastapp, lastdata, raw)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
                ON CONFLICT (uniqueid) DO NOTHING`;
     let inserted = 0;
     for (const r of records) {
-      const res = await client.query(q, [r.uniqueid, r.src, r.dst, r.start_time, r.answer_time, r.end_time, r.duration, r.billsec, r.disposition, r.channel_ext, r.dstchannel_ext, r.action_type, r.device_info, r.raw]);
+      const res = await client.query(q, [r.uniqueid, r.src, r.dst, r.start_time, r.answer_time, r.end_time, r.duration, r.billsec, r.disposition, r.channel, r.dstchannel, r.channel_ext, r.dstchannel_ext, r.accountcode, r.caller_name, r.lastapp, r.lastdata, r.raw]);
       inserted += res.rowCount;
     }
     await client.query('COMMIT');

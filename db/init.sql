@@ -20,21 +20,27 @@ CREATE TABLE IF NOT EXISTS cdr_raw (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS cdr (
+DROP TABLE IF EXISTS cdr;
+
+CREATE TABLE cdr (
     id SERIAL PRIMARY KEY,
-    uniqueid VARCHAR(50) UNIQUE NOT NULL,
+    uniqueid VARCHAR(64) UNIQUE,
     src VARCHAR(50),
     dst VARCHAR(50),
     start_time TIMESTAMP,
-    answer_time TIMESTAMP NULL,
+    answer_time TIMESTAMP,
     end_time TIMESTAMP,
-    duration INT,
-    billsec INT,
+    duration INTEGER,
+    billsec INTEGER,
     disposition VARCHAR(20),
-    channel_ext VARCHAR(50),
-    dstchannel_ext VARCHAR(50),
-    action_type VARCHAR(20),
-    device_info VARCHAR(50),
+    channel TEXT,
+    dstchannel TEXT,
+    channel_ext VARCHAR(20),
+    dstchannel_ext VARCHAR(20),
+    accountcode VARCHAR(50),
+    caller_name VARCHAR(100),
+    lastapp VARCHAR(50),
+    lastdata TEXT,
     raw JSONB,
     created_at TIMESTAMP DEFAULT NOW()
 );
@@ -69,7 +75,7 @@ ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO cdr (
   uniqueid, src, dst, start_time, answer_time, end_time, duration, billsec,
-  disposition, channel_ext, dstchannel_ext, action_type, device_info, raw
+  disposition, channel, dstchannel, channel_ext, dstchannel_ext, accountcode, caller_name, lastapp, lastdata, raw
 )
 SELECT
   CONCAT('seed-', g),
@@ -80,11 +86,15 @@ SELECT
   NOW() - (interval '1 hour' * (g % 240)) + interval '2 minute',
   CASE WHEN g % 4 = 0 THEN 0 ELSE 30 + ((g * 19) % 420) END,
   CASE WHEN g % 4 = 0 THEN 0 ELSE 20 + ((g * 17) % 360) END,
-  CASE WHEN g % 7 = 0 THEN 'ocupado' WHEN g % 4 = 0 THEN 'no_contestada' ELSE 'contestada' END,
+  CASE WHEN g % 7 = 0 THEN 'FAILED' WHEN g % 4 = 0 THEN 'NO ANSWER' ELSE 'ANSWERED' END,
+  'PJSIP/1001-00000001',
+  'PJSIP/2001-00000001',
   'SIP/1001',
   'SIP/2001',
-  'OUT',
-  'UCM6301',
+  'ACCT-001',
+  'Cliente Demo',
+  'Dial',
+  'PJSIP/2001,30',
   jsonb_build_object('seed', true)
 FROM generate_series(1, 200) g
 ON CONFLICT (uniqueid) DO NOTHING;

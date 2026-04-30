@@ -20,23 +20,12 @@ const ensureAdminUser = async () => {
 };
 
 const ensureCdrSchemaCompatibility = async () => {
-  await pool.query('ALTER TABLE cdr ADD COLUMN IF NOT EXISTS disposition VARCHAR(20)');
-
-  await pool.query(`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_name = 'cdr' AND column_name = 'status'
-      ) THEN
-        UPDATE cdr
-        SET disposition = COALESCE(NULLIF(disposition, ''), status)
-        WHERE status IS NOT NULL;
-      END IF;
-    END $$;
-  `);
-
+  await pool.query('ALTER TABLE cdr ADD COLUMN IF NOT EXISTS channel TEXT');
+  await pool.query('ALTER TABLE cdr ADD COLUMN IF NOT EXISTS dstchannel TEXT');
+  await pool.query('ALTER TABLE cdr ADD COLUMN IF NOT EXISTS accountcode VARCHAR(50)');
+  await pool.query('ALTER TABLE cdr ADD COLUMN IF NOT EXISTS caller_name VARCHAR(100)');
+  await pool.query('ALTER TABLE cdr ADD COLUMN IF NOT EXISTS lastapp VARCHAR(50)');
+  await pool.query('ALTER TABLE cdr ADD COLUMN IF NOT EXISTS lastdata TEXT');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_cdr_disposition ON cdr(disposition)');
 };
 

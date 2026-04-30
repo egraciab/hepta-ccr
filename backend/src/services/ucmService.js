@@ -6,13 +6,6 @@ const cdrModel = require('../models/cdrModel');
 const pool = require('../config/db');
 const licenseService = require('./licenseService');
 
-const statusMap = {
-  ANSWERED: 'contestada',
-  FAILED: 'fallida',
-  'NO ANSWER': 'no_contestada',
-  BUSY: 'ocupado',
-};
-
 let lastRawResponse = null;
 let lastFieldStats = {
   detectedFields: [],
@@ -26,13 +19,6 @@ const nullIfEmpty = (value) => {
   if (value === undefined || value === null) return null;
   const str = String(value).trim();
   return str === '' ? null : str;
-};
-
-const parseDate = (value) => {
-  const normalized = nullIfEmpty(value);
-  if (!normalized) return null;
-  const parsed = new Date(normalized);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const getSettingsMap = async () => {
@@ -134,29 +120,33 @@ const fetchCDR = async (baseUrl, cookie, options = {}) => {
     console.log('==== UCM RAW RESPONSE END ====');
   }
 
-  const records = response.data?.response?.cdrs || response.data?.response?.records || [];
+  const records = response.data?.response?.cdr_root || [];
   const normalizedRecords = Array.isArray(records) ? records : [];
   detectFields(normalizedRecords);
   return normalizedRecords;
 };
 
 const transformRecord = (record) => {
-  const dispositionRaw = nullIfEmpty(record.disposition || record.status || null);
+  console.log('UCM RECORD:', record);
 
   const mapped = {
-    uniqueid: nullIfEmpty(record.uniqueid || record.Uniqueid || record.recordid || record.id),
-    src: nullIfEmpty(record.src || record.Source || record.calleridnum),
-    dst: nullIfEmpty(record.dst || record.Destination || record.dstnum),
-    start_time: parseDate(record.starttime || record.start || record.start_time || record.calldate),
-    answer_time: parseDate(record.answertime || record.answer || record.answer_time),
-    end_time: parseDate(record.endtime || record.end || record.end_time),
-    duration: Number.parseInt(record.duration || '0', 10) || 0,
-    billsec: Number.parseInt(record.billsec || '0', 10) || 0,
-    disposition: statusMap[dispositionRaw] || dispositionRaw || 'unknown',
-    channel_ext: nullIfEmpty(record.channel || record.channel_ext),
-    dstchannel_ext: nullIfEmpty(record.dstchannel || record.dstchannel_ext),
-    action_type: nullIfEmpty(record.action_type || record.direction),
-    device_info: nullIfEmpty(record.device_info || record.accountcode),
+    uniqueid: record.uniqueid,
+    src: record.src,
+    dst: record.dst,
+    start_time: record.start,
+    answer_time: record.answer || null,
+    end_time: record.end || null,
+    duration: Number(record.duration || 0),
+    billsec: Number(record.billsec || 0),
+    disposition: record.disposition,
+    channel: record.channel,
+    dstchannel: record.dstchannel,
+    channel_ext: record.channel_ext,
+    dstchannel_ext: record.dstchannel_ext,
+    accountcode: record.accountcode,
+    caller_name: record.caller_name,
+    lastapp: record.lastapp,
+    lastdata: record.lastdata,
     raw: record,
   };
 
