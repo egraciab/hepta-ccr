@@ -13,9 +13,25 @@ const importCdr = async (_req, res, next) => {
     res.status(202).json({ data: { accepted: true, ...ucmService.getImportStatus(), message: 'Importación en proceso' } });
     setImmediate(async () => {
       try {
-        await ucmService.importCDR();
+        await ucmService.importCDR({ mode: 'incremental' });
       } catch (error) {
         console.error('[UCM] import background error', error.message);
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const importCdrFull = async (req, res, next) => {
+  try {
+    const startTime = req.body?.startTime;
+    res.status(202).json({ data: { accepted: true, ...ucmService.getImportStatus(), message: 'Importación completa en proceso' } });
+    setImmediate(async () => {
+      try {
+        await ucmService.importCDR({ mode: 'full', startTime });
+      } catch (error) {
+        console.error('[UCM] full import background error', error.message);
       }
     });
   } catch (error) {
@@ -39,4 +55,4 @@ const debugRaw = async (_req, res, next) => {
   }
 };
 
-module.exports = { testConnection, importCdr, importStatus, debugRaw };
+module.exports = { testConnection, importCdr, importCdrFull, importStatus, debugRaw };

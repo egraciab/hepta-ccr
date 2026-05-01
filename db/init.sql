@@ -54,6 +54,12 @@ CREATE INDEX IF NOT EXISTS idx_cdr_start_time ON cdr(start_time);
 CREATE INDEX IF NOT EXISTS idx_cdr_disposition ON cdr(disposition);
 CREATE INDEX IF NOT EXISTS idx_cdr_src ON cdr(src);
 
+CREATE TABLE IF NOT EXISTS sync_state (
+    id SERIAL PRIMARY KEY,
+    last_start_time TIMESTAMP,
+    last_run TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key VARCHAR(120) PRIMARY KEY,
     value TEXT NOT NULL

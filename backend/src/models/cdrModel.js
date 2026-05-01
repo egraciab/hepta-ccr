@@ -66,8 +66,8 @@ const getDashboardStats = async (filters) => {
   const { where, values } = buildWhere(filters);
   const [totals, perAgent, perDay, perStatus, perHour] = await Promise.all([
     pool.query(`SELECT COUNT(*)::int AS total_calls, COALESCE(ROUND(AVG(CASE WHEN billsec > 0 THEN billsec ELSE duration END)::numeric,2),0) AS average_duration,
-              COALESCE(SUM(CASE WHEN disposition='ANSWERED' THEN 1 ELSE 0 END),0)::int AS answered_calls,
-              COALESCE(SUM(CASE WHEN disposition IN ('NO ANSWER', 'FAILED') THEN 1 ELSE 0 END),0)::int AS missed_calls
+              COALESCE(SUM(CASE WHEN disposition='contestada' THEN 1 ELSE 0 END),0)::int AS answered_calls,
+              COALESCE(SUM(CASE WHEN disposition IN ('perdida','ocupado') THEN 1 ELSE 0 END),0)::int AS missed_calls
               FROM cdr ${where}`, values),
     pool.query(`SELECT COALESCE(NULLIF(caller_name,''), NULLIF(channel_ext,''), src, '-') AS agent, COUNT(*)::int AS total FROM cdr ${where} GROUP BY 1 ORDER BY total DESC`, values),
     pool.query(`SELECT DATE(start_time) AS day, COUNT(*)::int AS total FROM cdr ${where} GROUP BY DATE(start_time) ORDER BY day ASC`, values),
