@@ -1,0 +1,23 @@
+{
+  "name": "hepta-ccr",
+  "version": "1.0.0",
+  "description": "## Ejecutar ```bash docker compose up --build ```",
+  "main": "test_ucm.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/egraciab/hepta-ccr.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/egraciab/hepta-ccr/issues"
+  },
+  "homepage": "https://github.com/egraciab/hepta-ccr#readme",
+  "dependencies": {
+    "axios": "^1.15.2"
+  }
+}
