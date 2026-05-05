@@ -29,8 +29,27 @@ const ensureCdrSchemaCompatibility = async () => {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_cdr_disposition ON cdr(disposition)');
 };
 
+
+const ensureAgentSchemaCompatibility = async () => {
+  await pool.query('ALTER TABLE agents ADD COLUMN IF NOT EXISTS alias VARCHAR(120)');
+  await pool.query("ALTER TABLE agents ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'Agente'");
+  await pool.query('ALTER TABLE agents ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT true');
+  await pool.query('ALTER TABLE agents ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_extension_unique ON agents(extension)');
+};
+
+const ensureSyncStateSchemaCompatibility = async () => {
+  await pool.query(`CREATE TABLE IF NOT EXISTS sync_state (
+    id SERIAL PRIMARY KEY,
+    last_start_time TIMESTAMP,
+    last_run TIMESTAMP
+  )`);
+};
+
 const bootstrap = async () => {
   await ensureCdrSchemaCompatibility();
+  await ensureAgentSchemaCompatibility();
+  await ensureSyncStateSchemaCompatibility();
   await ensureAdminUser();
 };
 

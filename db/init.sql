@@ -75,7 +75,7 @@ SELECT * FROM (VALUES
   ('Carla Reyes', 'Cobranza', '1003'),
   ('Diego Silva', 'N2', '1004'),
   ('Eva Brown', 'Atención', '1005')
-) AS data(name, extension)
+) AS data(name, role, extension)
 WHERE NOT EXISTS (SELECT 1 FROM agents);
 
 INSERT INTO settings (key, value)
