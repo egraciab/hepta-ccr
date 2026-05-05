@@ -9,7 +9,7 @@ let cdrState = { page: 1, limit: 15, sortBy: 'call_date', sortOrder: 'desc', hou
 let agentsCache = [];
 let autoSyncTimer = null;
 
-const statusMap = { ANSWERED: 'contestada', 'NO ANSWER': 'perdida', FAILED: 'fallida', BUSY: 'ocupado' };
+const statusMap = { contestada: 'Contestadas', perdida: 'Perdidas', fallida: 'Fallidas', ocupado: 'Ocupado' };
 
 const el = (id) => document.getElementById(id);
 const spinner = el('spinner');
@@ -195,19 +195,29 @@ const loadCdr = async () => {
   el('cdrPageInfo').textContent = `Página ${payload.page} / ${Math.max(1, Math.ceil(payload.total / payload.limit))}`;
 };
 
+const agentDisplayName = (agent) => agent.alias || agent.name || agent.extension || '-';
+
 const loadAgents = async () => {
   const response = await api('/agents');
   const agents = (await response.json()).data;
   agentsCache = agents;
-  el('agentsTable').innerHTML = agents.map((a) => `<tr><td>${a.name}</td><td>${a.role || ''}</td><td>${a.extension}</td><td><button data-id="${a.id}" class="btn btn-sm btn-outline-primary edit-agent">Editar</button> <button data-id="${a.id}" class="btn btn-sm btn-outline-danger delete-agent">Eliminar</button></td></tr>`).join('');
+  el('agentsTable').innerHTML = agents.map((a) => `<tr>
+    <td><input type="checkbox" class="form-check-input toggle-agent" data-id="${a.id}" ${a.enabled ? 'checked' : ''}></td>
+    <td>${a.extension || '-'}</td>
+    <td>${a.name || '-'}</td>
+    <td>${a.alias || ''}</td>
+    <td>${a.role || ''}</td>
+    <td>${a.last_seen_at ? new Date(a.last_seen_at).toLocaleString('es-ES') : '-'}</td>
+    <td><button data-id="${a.id}" class="btn btn-sm btn-outline-primary edit-agent">Editar</button></td>
+  </tr>`).join('');
 
   const agentFilter = el('agentFilter');
   const current = agentFilter.value;
   agentFilter.innerHTML = '<option value="">Todos</option>';
   agents.forEach((agent) => {
     const option = document.createElement('option');
-    option.value = agent.name;
-    option.textContent = agent.name;
+    option.value = agentDisplayName(agent);
+    option.textContent = agentDisplayName(agent);
     agentFilter.appendChild(option);
   });
   agentFilter.value = current;
@@ -349,8 +359,8 @@ const initEvents = () => {
   el('saveAgentBtn').addEventListener('click', async () => {
     try {
       const id = el('agentId').value;
-      const payload = { name: el('agentName').value, role: el('agentRole').value, extension: el('agentExtension').value };
-      await api(`/agents/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: payload.name, role: payload.role }) });
+      const payload = { alias: el('agentName').value, role: el('agentRole').value };
+      await api(`/agents/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       agentModal.hide();
       notify('Agente guardado');
       await loadAgents();
@@ -366,12 +376,18 @@ const initEvents = () => {
         const row = event.target.closest('tr').children;
         el('agentModalTitle').textContent = 'Editar agente';
         el('agentId').value = id;
-        el('agentName').value = row[0].textContent;
-        el('agentRole').value = row[1].textContent;
-        el('agentExtension').value = row[2].textContent;
+        el('agentExtension').value = row[1].textContent;
+        el('agentName').value = row[3].textContent;
+        el('agentRole').value = row[4].textContent;
         agentModal.show();
       }
 
+
+      if (event.target.classList.contains('toggle-agent')) {
+        await api(`/agents/${event.target.dataset.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: event.target.checked }) });
+        notify(event.target.checked ? 'Agente incluido en reportes' : 'Agente excluido de reportes');
+        await loadAgents();
+      }
 
       if (event.target.classList.contains('delete-user')) {
         if (!(await confirmAction('¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.'))) return;
@@ -456,9 +472,9 @@ const initEvents = () => {
     }
   });
 
-  el('exportCsvBtn').addEventListener('click', () => downloadFrom('/export/cdr', 'reporte_llamadas.csv').catch((e) => notify(e.message, true)));
-  el('exportXlsxBtn').addEventListener('click', () => downloadFrom('/export/cdr/xlsx', 'reporte_llamadas.xlsx').catch((e) => notify(e.message, true)));
-  el('exportPdfBtn').addEventListener('click', () => downloadFrom('/export/cdr/pdf', 'reporte_llamadas.pdf').catch((e) => notify(e.message, true)));
+  el('exportCsvBtn').addEventListener('click', () => downloadFrom(`/cdr/export?format=csv&${cdrQuery().toString()}`, 'reporte_llamadas.csv').catch((e) => notify(e.message, true)));
+  el('exportXlsxBtn').addEventListener('click', () => downloadFrom(`/cdr/export?format=xlsx&${cdrQuery().toString()}`, 'reporte_llamadas.xlsx').catch((e) => notify(e.message, true)));
+  el('exportPdfBtn').addEventListener('click', () => downloadFrom(`/cdr/export?format=pdf&${cdrQuery().toString()}`, 'reporte_llamadas.pdf').catch((e) => notify(e.message, true)));
 
   el('saveSettingsBtn').addEventListener('click', async () => {
     const payloads = [
