@@ -66,8 +66,8 @@ const fetchCDR = async (baseUrl, cookie, options = {}) => {
       format: 'json',
       numRecords: options.numRecords || 500,
       offset: options.offset || 0,
-      start_date: options.startTime ? options.startTime.split(' ')[0] : undefined,
-      end_date: options.endTime ? options.endTime.split(' ')[0] : undefined,
+      start_date: options.startTime?.split(' ')[0],
+      end_date: options.endTime?.split(' ')[0],
     },
   });
 
