@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es" data-theme="light" data-bs-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HEPTA CCR Enterprise</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="loginView" class="login-wrapper">
+      <div class="card login-card app-card shadow-soft">
+        <div class="card-body p-4">
+          <h4 class="mb-3">HEPTA CCR - Iniciar sesión</h4>
+          <div class="mb-3"><input id="email" class="form-control" placeholder="Correo electrónico" value="admin@hepta.local" /></div>
+          <div class="mb-3"><input id="password" type="password" class="form-control" placeholder="Contraseña" value="admin123" /></div>
+          <button id="loginBtn" class="btn btn-primary w-100">Iniciar sesión</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="appView" class="d-none">
+      <div class="d-flex align-items-center gap-2 p-2"><img src="assets/logo.png" alt="logo" style="height:32px"/><strong>HEPTA CCR</strong></div>
+      <div id="licenseBanner" class="alert alert-warning m-2 d-none"></div>
+      <div class="layout">
+        <aside id="sidebar" class="sidebar">
+          <div class="sidebar-brand"><i class="bi bi-headset"></i> <span>HEPTA CCR</span></div>
+          <button class="menu-item active" data-section="dashboard"><i class="bi bi-speedometer2"></i> Panel</button>
+          <button class="menu-item" data-section="cdr"><i class="bi bi-telephone"></i> Registro de Llamadas</button>
+          <button class="menu-item" data-section="agents"><i class="bi bi-person-badge"></i> Agentes</button>
+          <button class="menu-item" data-section="users" data-admin-only="true"><i class="bi bi-people"></i> Usuarios</button>
+          
+          <button class="menu-item" data-section="settings" data-admin-only="true"><i class="bi bi-gear"></i> Configuración</button>
+        </aside>
+
+        <main class="content-area">
+          <header class="topbar app-card shadow-soft">
+            <button id="toggleSidebar" class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip" title="Mostrar/Ocultar menú"><i class="bi bi-list"></i></button>
+            <div class="d-flex gap-2">
+              <button id="darkModeBtn" class="btn btn-outline-secondary btn-sm"><i class="bi bi-moon-stars"></i> Modo oscuro</button>
+              <button id="logoutBtn" class="btn btn-outline-danger btn-sm"><i class="bi bi-box-arrow-right"></i> Cerrar sesión</button>
+            </div>
+          </header>
+
+          <section id="dashboardSection" class="app-section">
+            <div class="row g-3 mb-3">
+              <div class="col-md-3"><input type="date" id="startDate" class="form-control" /></div>
+              <div class="col-md-3"><input type="date" id="endDate" class="form-control" /></div>
+              <div class="col-md-3 d-flex gap-2"><button id="refreshDashboard" class="btn btn-primary w-100">Actualizar Panel</button><button id="clearDashboardFiltersBtn" class="btn btn-outline-secondary w-100">Limpiar filtros</button></div>
+              <div class="col-md-3 d-flex gap-2" data-admin-only="true">
+                <button id="importCdrBtn" class="btn btn-outline-primary w-100">Importar CDR</button>
+                <div class="form-check form-switch d-flex align-items-center ms-2">
+                  <input class="form-check-input" type="checkbox" id="autoSyncToggle">
+                  <label class="form-check-label ms-2" for="autoSyncToggle">Auto-sync 30s</label>
+                </div>
+              </div>
+            </div>
+            <div class="row g-3 mb-3">
+              <div class="col-md-6 col-lg-3"><div class="card app-card shadow-soft"><div class="card-body"><small>Total de Llamadas</small><h3 id="totalCalls">0</h3></div></div></div>
+              <div class="col-md-6 col-lg-3"><div class="card app-card shadow-soft"><div class="card-body"><small>Duración Promedio</small><h3 id="avgDuration">0</h3></div></div></div>
+              <div class="col-md-6 col-lg-3"><div class="card app-card shadow-soft"><div class="card-body"><small>Contestadas / Perdidas</small><h3 id="answeredMissed">0 / 0</h3></div></div></div>
+              <div class="col-md-6 col-lg-3"><div class="card app-card shadow-soft"><div class="card-body"><small>Agente Destacado</small><h3 id="topAgent">-</h3></div></div></div>
+            </div>
+            <div class="row g-3">
+              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header">Llamadas por día</div><div class="card-body"><canvas id="callsPerDayChart"></canvas></div></div></div>
+              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header">Llamadas por agente</div><div class="card-body"><canvas id="callsPerAgentChart"></canvas></div></div></div>
+              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header">Distribución de estado</div><div class="card-body"><canvas id="statusChart"></canvas></div></div></div>
+              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header">Llamadas por hora</div><div class="card-body"><canvas id="hourChart"></canvas></div></div></div>
+            </div>
+          </section>
+
+          <section id="cdrSection" class="app-section d-none">
+            <div class="card app-card shadow-soft"><div class="card-body">
+              <div class="row g-2 mb-3">
+                <div class="col-md-2"><input type="date" id="cdrStart" class="form-control" /></div>
+                <div class="col-md-2"><input type="date" id="cdrEnd" class="form-control" /></div>
+                <div class="col-md-2"><select id="agentFilter" class="form-select"><option value="">Todos</option></select></div>
+                <div class="col-md-2"><select id="cdrStatus" class="form-select"><option value="">Todos</option><option value="contestada">Contestadas</option><option value="perdida">Perdidas</option><option value="fallida">Fallidas</option><option value="ocupado">Ocupado</option></select></div>
+                <div class="col-md-2"><input type="text" id="cdrSearch" class="form-control" placeholder="Buscar" /></div>
+                <div class="col-md-2 d-flex gap-2"><button id="clearFiltersBtn" class="btn btn-outline-secondary w-100">Limpiar</button><button id="exportCsvBtn" class="btn btn-success">CSV</button><button id="exportXlsxBtn" class="btn btn-success">XLSX</button><button id="exportPdfBtn" class="btn btn-danger">PDF</button></div>
+              </div>
+              <div class="table-responsive"><table class="table table-hover" id="cdrTable"><thead><tr><th data-sort="call_date">Fecha</th><th data-sort="source">Origen</th><th data-sort="destination">Destino</th><th data-sort="duration">Duración</th><th data-sort="status">Estado</th><th data-sort="agent">Agente</th></tr></thead><tbody></tbody></table></div>
+              <div class="d-flex justify-content-between"><button id="prevPage" class="btn btn-outline-secondary btn-sm">Anterior</button><span id="cdrPageInfo">Página 1</span><button id="nextPage" class="btn btn-outline-secondary btn-sm">Siguiente</button></div>
+            </div></div>
+          </section>
+
+          <section id="agentsSection" class="app-section d-none"><div class="card app-card shadow-soft"><div class="card-body"><div class="d-flex justify-content-between mb-2"><h5>Agentes monitoreados</h5></div><div class="table-responsive"><table class="table table-hover"><thead><tr><th>Incluir</th><th>Extensión</th><th>Nombre detectado</th><th>Alias</th><th>Rol / Área</th><th>Última actividad</th><th>Acción</th></tr></thead><tbody id="agentsTable"></tbody></table></div></div></div></section>
+
+          <div class="modal fade" id="agentModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="agentModalTitle">Agente</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="hidden" id="agentId"/><div class="mb-2"><label class="form-label">Alias / Apodo</label><input id="agentName" class="form-control"/></div><div class="mb-2"><label class="form-label">Rol / Área</label><input id="agentRole" class="form-control"/></div><div class="mb-2"><label class="form-label">Extensión</label><input id="agentExtension" class="form-control" readonly/></div></div><div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button id="saveAgentBtn" class="btn btn-primary">Guardar</button></div></div></div></div>
+
+          <section id="usersSection" class="app-section d-none"><div class="card app-card shadow-soft"><div class="card-body"><div class="d-flex justify-content-between mb-2"><h5>Usuarios</h5><button id="addUserBtn" class="btn btn-sm btn-primary">Crear usuario</button></div><div class="table-responsive"><table class="table table-hover"><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Creado</th><th>Acciones</th></tr></thead><tbody id="usersTable"></tbody></table></div></div></div></section>
+
+          <div class="modal fade" id="userModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="userModalTitle">Usuario</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="hidden" id="userId"/><div class="mb-2"><label class="form-label">Nombre</label><input id="userName" class="form-control"/></div><div class="mb-2"><label class="form-label">Email</label><input id="userEmail" class="form-control"/></div><div class="mb-2"><label class="form-label">Rol</label><select id="userRole" class="form-select"><option value="viewer">viewer</option><option value="supervisor">supervisor</option><option value="admin">admin</option></select></div><div class="mb-2"><label class="form-label">Contraseña</label><div class="input-group"><input id="userPassword" type="password" class="form-control"/><button id="toggleUserPassword" class="btn btn-outline-secondary" type="button">Mostrar</button></div></div></div><div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button id="saveUserBtn" class="btn btn-primary">Guardar</button></div></div></div></div>
+
+          <section id="importSection" class="app-section d-none"><div class="card app-card shadow-soft"><div class="card-body"><h5>Importar CSV</h5><input type="file" id="csvFile" class="form-control mb-2" /><button id="importBtn" class="btn btn-primary">Subir archivo</button></div></div></section>
+
+          <section id="settingsSection" class="app-section d-none"><div class="card app-card shadow-soft"><div class="card-body">
+            <h5>Configuración de Central Telefónica</h5>
+            <div class="row g-2">
+              <div class="col-md-5"><label class="form-label">URL base UCM</label><input id="ucmBaseUrl" class="form-control" placeholder="https://192.168.1.20:8443" /></div>
+              <div class="col-md-3"><label class="form-label">Usuario API</label><input id="apiUsername" class="form-control" placeholder="api_user" /></div>
+              <div class="col-md-4"><label class="form-label">Contraseña API</label><input id="apiPassword" class="form-control" placeholder="********" /></div>
+            </div>
+            <div class="d-flex gap-2 mt-3"><button id="saveSettingsBtn" class="btn btn-primary">Guardar configuración</button><button id="testConnectionBtn" class="btn btn-outline-success">Probar conexión</button></div><hr/><h6>Importación CDR</h6><div class="row g-2"><div class="col-md-4"><label class="form-label">Fecha desde</label><input id="fullImportStart" type="date" class="form-control"></div><div class="col-md-4"><label class="form-label">Fecha hasta</label><input id="fullImportEnd" type="date" class="form-control"></div><div class="col-md-4 d-flex align-items-end"><button id="fullImportBtn" class="btn btn-outline-primary w-100">Importación completa</button></div></div><div id="fullImportStatus" class="mt-2 small text-muted"></div>
+            <div id="testConnectionResult" class="mt-3"></div>
+          </div></div></section>
+        </main>
+      </div>
+    </div>
+
+    <div id="toast" class="toast align-items-center border-0 position-fixed bottom-0 end-0 m-3" role="alert"><div class="d-flex"><div id="toastBody" class="toast-body">Listo</div><button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button></div></div>
+    <div id="confirmModal" class="modal fade" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Confirmar acción</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p id="confirmMessage" class="mb-0"></p></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" id="confirmAcceptBtn" class="btn btn-danger">Confirmar</button></div></div></div></div>
+    <div id="spinner" class="spinner-overlay d-none"><div class="spinner-border text-primary"></div></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="dashboard.js"></script>
+    <footer class="text-center py-3">HEPTA Group © Todos los derechos reservados</footer>
+  </body>
+</html>
