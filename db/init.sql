@@ -10,8 +10,11 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS agents (
     id SERIAL PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
+    alias VARCHAR(120),
     role VARCHAR(50) DEFAULT 'Agente',
-    extension VARCHAR(20) NOT NULL UNIQUE
+    extension VARCHAR(20) NOT NULL UNIQUE,
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    last_seen_at TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS cdr_raw (

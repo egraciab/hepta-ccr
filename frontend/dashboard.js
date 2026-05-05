@@ -178,8 +178,8 @@ const loadDashboard = async () => {
 const cdrQuery = () => {
   const params = queryFromRange('cdrStart', 'cdrEnd');
   if (el('agentFilter').value) params.append('agent', el('agentFilter').value);
-  if (el('cdrStatus').value) params.append('status', el('cdrStatus').value);
-  if (el('cdrSearch').value) params.append('search', el('cdrSearch').value);
+  if (el('cdrStatus').value) params.append('disposition', el('cdrStatus').value);
+  if (el('cdrSearch').value) params.append('q', el('cdrSearch').value);
   if (cdrState.hour !== '') params.append('hour', cdrState.hour);
   params.append('page', cdrState.page);
   params.append('limit', cdrState.limit);
@@ -282,12 +282,26 @@ const initEvents = () => {
   });
   el('toggleSidebar').addEventListener('click', () => el('sidebar').classList.toggle('collapsed'));
 
-  document.querySelectorAll('.menu-item').forEach((item) => item.addEventListener('click', () => openSection(item.dataset.section)));
+  document.querySelectorAll('.menu-item').forEach((item) => item.addEventListener('click', () => { openSection(item.dataset.section); if (item.dataset.section === 'dashboard') { setDefaultDateRange(); loadDashboard(); }}));
+  document.querySelector('.sidebar-brand')?.addEventListener('click', () => { openSection('dashboard'); setDefaultDateRange(); loadDashboard(); clearFilters(); });
 
   el('refreshDashboard').addEventListener('click', loadDashboard);
+  el('clearDashboardFiltersBtn').addEventListener('click', () => { setDefaultDateRange(); loadDashboard(); });
   el('importCdrBtn').addEventListener('click', () => {
     notify('Importación en proceso');
     api('/ucm/import', { method: 'POST' }).then(() => pollImportStatus()).catch((error) => notify(error.message, true));
+  });
+
+  
+  el('fullImportBtn')?.addEventListener('click', () => {
+    const start = el('fullImportStart').value;
+    const end = el('fullImportEnd').value;
+    if (!start || !end) { notify('Selecciona fecha desde/hasta', true); return; }
+    const payload = { startTime: `${start} 00:00:00`, endTime: `${end} 23:59:59` };
+    notify('Importación completa en proceso');
+    api('/ucm/import/full', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(() => pollImportStatus())
+      .catch((error) => notify(error.message, true));
   });
 
   el('autoSyncToggle').addEventListener('change', (event) => {
@@ -305,8 +319,7 @@ const initEvents = () => {
     }
   });
 
-  el('cdrFilterBtn').addEventListener('click', applyCdrFilters);
-  el('clearFiltersBtn').addEventListener('click', clearFilters);
+    el('clearFiltersBtn').addEventListener('click', clearFilters);
   ['cdrStart', 'cdrEnd', 'agentFilter', 'cdrStatus'].forEach((id) => el(id).addEventListener('change', applyCdrFilters));
   el('cdrSearch').addEventListener('input', () => {
     clearTimeout(window.__cdrSearchTimer);
@@ -324,7 +337,7 @@ const initEvents = () => {
 
   const agentModal = new bootstrap.Modal(el('agentModal'));
 
-  el('addAgentBtn').addEventListener('click', () => {
+  el('addAgentBtn')?.addEventListener('click', () => {
     el('agentModalTitle').textContent = 'Crear agente';
     el('agentId').value = '';
     el('agentName').value = '';
@@ -337,11 +350,7 @@ const initEvents = () => {
     try {
       const id = el('agentId').value;
       const payload = { name: el('agentName').value, role: el('agentRole').value, extension: el('agentExtension').value };
-      if (id) {
-        await api(`/agents/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      } else {
-        await api('/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      }
+      await api(`/agents/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias: payload.name, role: payload.role }) });
       agentModal.hide();
       notify('Agente guardado');
       await loadAgents();
@@ -363,12 +372,6 @@ const initEvents = () => {
         agentModal.show();
       }
 
-      if (event.target.classList.contains('delete-agent')) {
-        if (!(await confirmAction('¿Eliminar este agente?'))) return;
-        await api(`/agents/${event.target.dataset.id}`, { method: 'DELETE' });
-        notify('Agente eliminado');
-        await loadAgents();
-      }
 
       if (event.target.classList.contains('delete-user')) {
         if (!(await confirmAction('¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.'))) return;
@@ -491,7 +494,9 @@ const pollImportStatus = async () => {
   const tick = async () => {
     const response = await api('/ucm/import/status');
     const data = (await response.json()).data;
-    notify(`Importando CDR... recibidos ${data.received}, insertados ${data.inserted}, omitidos ${data.skipped}`);
+    const msg = `Recibidos ${data.received} | Insertados ${data.inserted} | Omitidos ${data.skipped}`;
+    notify(`Importando CDR... ${msg}`);
+    const statusEl = document.getElementById('fullImportStatus'); if (statusEl) statusEl.textContent = msg;
     if (data.running) {
       setTimeout(tick, 2000);
       return;

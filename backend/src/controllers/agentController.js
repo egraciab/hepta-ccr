@@ -1,16 +1,9 @@
 const agentService = require('../services/agentService');
 
-const list = async (_req, res, next) => {
+const list = async (req, res, next) => {
   try {
-    res.json({ data: await agentService.listAgents() });
-  } catch (error) {
-    next(error);
-  }
-};
-
-const create = async (req, res, next) => {
-  try {
-    res.status(201).json({ data: await agentService.createAgent(req.body) });
+    const includeDisabled = String(req.query.includeDisabled || 'false') === 'true';
+    res.json({ data: await agentService.listAgents({ includeDisabled }) });
   } catch (error) {
     next(error);
   }
@@ -24,13 +17,4 @@ const update = async (req, res, next) => {
   }
 };
 
-const remove = async (req, res, next) => {
-  try {
-    const ok = await agentService.deleteAgent(req.params.id);
-    res.json({ data: { deleted: ok } });
-  } catch (error) {
-    next(error);
-  }
-};
-
-module.exports = { list, create, update, remove };
+module.exports = { list, update };

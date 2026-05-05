@@ -13,6 +13,7 @@ router.get('/cdr', cdrController.listCdr);
 router.get('/stats', cdrController.stats);
 router.post('/cdr/clear', requireRole('admin'), cdrController.clear);
 router.post('/import/cdr', requireRole('admin', 'supervisor'), blockWhenRestricted, requireFeature('import'), upload.single('file'), cdrController.importCsv);
+router.get('/cdr/export', blockWhenRestricted, requireFeature('export'), cdrController.exportByFormat);
 router.get('/export/cdr', blockWhenRestricted, requireFeature('export'), cdrController.exportCsv);
 router.get('/export/cdr/xlsx', blockWhenRestricted, requireFeature('export'), cdrController.exportXlsx);
 router.get('/export/cdr/pdf', blockWhenRestricted, requireFeature('export'), cdrController.exportPdf);

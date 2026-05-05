@@ -6,8 +6,6 @@ const router = express.Router();
 
 router.use(authMiddleware);
 router.get('/', agentController.list);
-router.post('/', requireRole('admin', 'supervisor'), agentController.create);
 router.put('/:id', requireRole('admin', 'supervisor'), agentController.update);
-router.delete('/:id', requireRole('admin'), agentController.remove);
 
 module.exports = router;

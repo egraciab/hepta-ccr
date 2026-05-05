@@ -66,8 +66,8 @@ const fetchCDR = async (baseUrl, cookie, options = {}) => {
       format: 'json',
       numRecords: options.numRecords || 500,
       offset: options.offset || 0,
-      startTime: options.startTime,
-      endTime: options.endTime,
+      start_date: options.startTime ? options.startTime.split(' ')[0] : undefined,
+      end_date: options.endTime ? options.endTime.split(' ')[0] : undefined,
     },
   });
 
@@ -121,7 +121,7 @@ const persistSyncState = async (lastStartTime) => {
   await pool.query('INSERT INTO sync_state (last_start_time, last_run) VALUES ($1, NOW())', [lastStartTime]);
 };
 
-const importCDR = async ({ mode = 'incremental', startTime } = {}) => {
+const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
   importStatus = { running: true, startedAt: new Date().toISOString(), finishedAt: null, received: 0, inserted: 0, skipped: 0, error: null };
 
   try {
@@ -137,6 +137,7 @@ const importCDR = async ({ mode = 'incremental', startTime } = {}) => {
 
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     let rangeStart;
+    let rangeEnd = endTime || now;
 
     if (mode === 'full') {
       rangeStart = startTime || '2026-01-01 00:00:00';
@@ -148,14 +149,21 @@ const importCDR = async ({ mode = 'incremental', startTime } = {}) => {
     }
 
     const cookie = await login(baseUrl, map.ucm_api_user, map.ucm_api_password);
-    const rows = await fetchCDR(baseUrl, cookie, { numRecords: 500, offset: 0, startTime: rangeStart, endTime: now });
+    const start_date = rangeStart.split(' ')[0];
+    const end_date = rangeEnd.split(' ')[0];
+    console.log("UCM import mode:", mode);
+    console.log("UCM import range:", { startTime: rangeStart, endTime: rangeEnd, start_date, end_date });
+    const rows = await fetchCDR(baseUrl, cookie, { numRecords: 500, offset: 0, startTime: rangeStart, endTime: rangeEnd });
     const transformed = rows.map(transformRecord).filter((row) => row.uniqueid);
+    console.log("UCM received:", rows.length);
 
     importStatus.received = rows.length;
 
     const inserted = await cdrModel.insertManyCdr(transformed);
     importStatus.inserted = inserted;
     importStatus.skipped = transformed.length - inserted;
+    console.log("UCM inserted:", inserted);
+    console.log("UCM skipped:", importStatus.skipped);
 
     const newestStart = transformed
       .map((row) => (row.start_time ? new Date(row.start_time) : null))
@@ -170,6 +178,20 @@ const importCDR = async ({ mode = 'incremental', startTime } = {}) => {
       await persistSyncState(null);
     }
 
+    
+    await pool.query(`
+      INSERT INTO agents (name, extension, role, enabled, last_seen_at)
+      SELECT COALESCE(NULLIF(t.caller_name, ''), COALESCE(NULLIF(t.channel_ext, ''), NULLIF(t.src, ''))),
+             COALESCE(NULLIF(t.channel_ext, ''), NULLIF(t.src, '')),
+             'Sin asignar',
+             true,
+             NOW()
+      FROM cdr t
+      WHERE t.start_time >= NOW() - INTERVAL '1 day'
+        AND COALESCE(NULLIF(t.channel_ext, ''), NULLIF(t.src, '')) IS NOT NULL
+      ON CONFLICT (extension) DO UPDATE SET last_seen_at = NOW();
+    `);
+
     importStatus.running = false;
     importStatus.finishedAt = new Date().toISOString();
 
@@ -179,6 +201,7 @@ const importCDR = async ({ mode = 'incremental', startTime } = {}) => {
       ...importStatus,
     };
   } catch (error) {
+
     importStatus.running = false;
     importStatus.finishedAt = new Date().toISOString();
     importStatus.error = error.message;
@@ -199,7 +222,7 @@ const testConnection = async () => {
   try {
     await login(baseUrl, map.ucm_api_user, map.ucm_api_password);
     return { success: true, message: `Conexión exitosa con ${baseUrl}` };
-  } catch (error) {
+    } catch (error) {
     return { success: false, message: error.message };
   }
 };

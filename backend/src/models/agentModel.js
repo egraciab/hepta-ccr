@@ -1,29 +1,22 @@
 const pool = require('../config/db');
 
-const listAgents = async () => {
-  const { rows } = await pool.query('SELECT id, name, role, extension FROM agents ORDER BY name ASC');
+const listAgents = async ({ includeDisabled = false } = {}) => {
+  const where = includeDisabled ? '' : 'WHERE enabled = true';
+  const { rows } = await pool.query(`SELECT id, name, alias, role, extension, enabled, last_seen_at FROM agents ${where} ORDER BY COALESCE(alias, name, extension) ASC`);
   return rows;
 };
 
-const createAgent = async ({ name, role, extension }) => {
+const updateAgent = async (id, { alias, role, enabled }) => {
   const { rows } = await pool.query(
-    'INSERT INTO agents (name, role, extension) VALUES ($1, $2, $3) RETURNING id, name, role, extension',
-    [name, role || 'Agente', extension]
+    `UPDATE agents
+     SET alias = COALESCE($1, alias),
+         role = COALESCE($2, role),
+         enabled = COALESCE($3, enabled)
+     WHERE id = $4
+     RETURNING id, name, alias, role, extension, enabled, last_seen_at`,
+    [alias ?? null, role ?? null, enabled ?? null, id]
   );
   return rows[0];
 };
 
-const updateAgent = async (id, { name, role, extension }) => {
-  const { rows } = await pool.query(
-    'UPDATE agents SET name = $1, role = $2, extension = $3 WHERE id = $4 RETURNING id, name, role, extension',
-    [name, role || 'Agente', extension, id]
-  );
-  return rows[0];
-};
-
-const deleteAgent = async (id) => {
-  const { rowCount } = await pool.query('DELETE FROM agents WHERE id = $1', [id]);
-  return rowCount > 0;
-};
-
-module.exports = { listAgents, createAgent, updateAgent, deleteAgent };
+module.exports = { listAgents, updateAgent };

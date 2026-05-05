@@ -14,15 +14,15 @@ const buildWhere = (filters = {}) => {
   }
   if (filters.agent) {
     values.push(filters.agent);
-    clauses.push(`channel_ext ILIKE '%' || $${values.length} || '%'`);
+    clauses.push(`COALESCE(a.alias, a.name, NULLIF(caller_name,''), NULLIF(channel_ext,''), src, '-') = $${values.length}`);
   }
-  if (filters.status) {
-    values.push(filters.status);
+  if (filters.disposition) {
+    values.push(filters.disposition);
     clauses.push(`disposition = $${values.length}`);
   }
-  if (filters.search) {
-    values.push(`%${filters.search}%`);
-    clauses.push(`(src ILIKE $${values.length} OR dst ILIKE $${values.length} OR uniqueid ILIKE $${values.length})`);
+  if (filters.q) {
+    values.push(`%${filters.q}%`);
+    clauses.push(`(src ILIKE $${values.length} OR dst ILIKE $${values.length} OR caller_name ILIKE $${values.length} OR channel_ext ILIKE $${values.length} OR dstchannel_ext ILIKE $${values.length})`);
   }
   if (filters.hour !== undefined && filters.hour !== null && filters.hour !== '') {
     values.push(Number.parseInt(filters.hour, 10));
@@ -41,11 +41,11 @@ const getCdr = async (filters) => {
   const { where, values } = buildWhere(filters);
   const offset = (page - 1) * limit;
 
-  const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM cdr ${where}`, values);
+  const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM cdr LEFT JOIN agents a ON a.extension = cdr.channel_ext AND a.enabled = true ${where}`, values);
   const rowsResult = await pool.query(
     `SELECT id, uniqueid, src AS source, dst AS destination, start_time AS call_date, duration, billsec, disposition AS status,
-            COALESCE(NULLIF(caller_name, ''), NULLIF(channel_ext, ''), NULLIF(src, ''), '-') AS agent
-     FROM cdr ${where}
+            COALESCE(a.alias, a.name, NULLIF(caller_name, ''), NULLIF(channel_ext, ''), NULLIF(src, ''), '-') AS agent
+     FROM cdr LEFT JOIN agents a ON a.extension = cdr.channel_ext AND a.enabled = true ${where}
      ORDER BY ${sortBy} ${sortOrder}
      LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
     [...values, limit, offset]
@@ -68,11 +68,11 @@ const getDashboardStats = async (filters) => {
     pool.query(`SELECT COUNT(*)::int AS total_calls, COALESCE(ROUND(AVG(CASE WHEN billsec > 0 THEN billsec ELSE duration END)::numeric,2),0) AS average_duration,
               COALESCE(SUM(CASE WHEN disposition='contestada' THEN 1 ELSE 0 END),0)::int AS answered_calls,
               COALESCE(SUM(CASE WHEN disposition IN ('perdida','ocupado') THEN 1 ELSE 0 END),0)::int AS missed_calls
-              FROM cdr ${where}`, values),
-    pool.query(`SELECT COALESCE(NULLIF(caller_name,''), NULLIF(channel_ext,''), src, '-') AS agent, COUNT(*)::int AS total FROM cdr ${where} GROUP BY 1 ORDER BY total DESC`, values),
-    pool.query(`SELECT DATE(start_time) AS day, COUNT(*)::int AS total FROM cdr ${where} GROUP BY DATE(start_time) ORDER BY day ASC`, values),
-    pool.query(`SELECT disposition AS status, COUNT(*)::int AS total FROM cdr ${where} GROUP BY disposition ORDER BY total DESC`, values),
-    pool.query(`SELECT EXTRACT(HOUR FROM start_time)::int AS hour, COUNT(*)::int AS total FROM cdr ${where} GROUP BY EXTRACT(HOUR FROM start_time) ORDER BY hour ASC`, values),
+              FROM cdr LEFT JOIN agents a ON a.extension = cdr.channel_ext AND a.enabled = true ${where}`, values),
+    pool.query(`SELECT COALESCE(NULLIF(caller_name,''), NULLIF(channel_ext,''), src, '-') AS agent, COUNT(*)::int AS total FROM cdr LEFT JOIN agents a ON a.extension = cdr.channel_ext AND a.enabled = true ${where} GROUP BY 1 ORDER BY total DESC`, values),
+    pool.query(`SELECT DATE(start_time) AS day, COUNT(*)::int AS total FROM cdr LEFT JOIN agents a ON a.extension = cdr.channel_ext AND a.enabled = true ${where} GROUP BY DATE(start_time) ORDER BY day ASC`, values),
+    pool.query(`SELECT disposition AS status, COUNT(*)::int AS total FROM cdr LEFT JOIN agents a ON a.extension = cdr.channel_ext AND a.enabled = true ${where} GROUP BY disposition ORDER BY total DESC`, values),
+    pool.query(`SELECT EXTRACT(HOUR FROM start_time)::int AS hour, COUNT(*)::int AS total FROM cdr LEFT JOIN agents a ON a.extension = cdr.channel_ext AND a.enabled = true ${where} GROUP BY EXTRACT(HOUR FROM start_time) ORDER BY hour ASC`, values),
   ]);
 
   return {

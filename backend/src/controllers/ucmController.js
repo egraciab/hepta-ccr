@@ -26,10 +26,11 @@ const importCdr = async (_req, res, next) => {
 const importCdrFull = async (req, res, next) => {
   try {
     const startTime = req.body?.startTime;
+    const endTime = req.body?.endTime;
     res.status(202).json({ data: { accepted: true, ...ucmService.getImportStatus(), message: 'Importación completa en proceso' } });
     setImmediate(async () => {
       try {
-        await ucmService.importCDR({ mode: 'full', startTime });
+        await ucmService.importCDR({ mode: 'full', startTime, endTime });
       } catch (error) {
         console.error('[UCM] full import background error', error.message);
       }

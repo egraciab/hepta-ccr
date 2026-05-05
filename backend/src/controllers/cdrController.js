@@ -8,16 +8,16 @@ const parseFilters = (query) => ({
   endDate: query.endDate,
   agent: query.agent,
   agentId: query.agent_id,
-  status: query.status,
+  disposition: query.disposition || query.status,
   hour: query.hour,
-  search: query.search,
+  q: query.q || query.search,
   page: query.page,
   limit: query.limit,
   sortBy: query.sortBy,
   sortOrder: query.sortOrder,
 });
 
-const statusLabel = { ANSWERED: 'contestada', 'NO ANSWER': 'perdida', FAILED: 'fallida', BUSY: 'ocupado' };
+const statusLabel = { contestada: 'Contestadas', perdida: 'Perdidas', fallida: 'Fallidas', ocupado: 'Ocupado' };
 
 
 const fields = async (_req, res, next) => {
@@ -42,51 +42,7 @@ const stats = async (req, res, next) => {
   try {
     const filters = parseFilters(req.query);
     const data = await cdrService.getDashboardStats(filters);
-
-    if (!Number.isInteger(Number.parseInt(filters.hour, 10))) {
-      return res.json({ data });
-    }
-
-    const hour = Number.parseInt(filters.hour, 10);
-    const details = await cdrService.getCdr({ ...filters, page: 1, limit: 5000 });
-    const hourRows = details.items.filter((row) => new Date(row.call_date).getHours() === hour);
-
-    const perAgentMap = new Map();
-    const perStatusMap = new Map();
-    const perDayMap = new Map();
-    let totalDuration = 0;
-
-    hourRows.forEach((row) => {
-      perAgentMap.set(row.agent, (perAgentMap.get(row.agent) || 0) + 1);
-      perStatusMap.set(row.status, (perStatusMap.get(row.status) || 0) + 1);
-      const day = new Date(row.call_date).toISOString().slice(0, 10);
-      perDayMap.set(day, (perDayMap.get(day) || 0) + 1);
-      totalDuration += Number(row.duration) || 0;
-    });
-
-    const answeredCalls = perStatusMap.get('answered') || 0;
-    const missedCalls = perStatusMap.get('missed') || 0;
-    const callsPerAgent = Array.from(perAgentMap.entries()).map(([agent, total]) => ({ agent, total }));
-    const statusDistribution = Array.from(perStatusMap.entries()).map(([status, total]) => ({ status, total }));
-    const callsPerDay = Array.from(perDayMap.entries()).map(([day, total]) => ({ day, total }));
-
-    callsPerAgent.sort((a, b) => b.total - a.total);
-    statusDistribution.sort((a, b) => b.total - a.total);
-    callsPerDay.sort((a, b) => a.day.localeCompare(b.day));
-
-    res.json({
-      data: {
-        ...data,
-        totalCalls: hourRows.length,
-        averageDuration: hourRows.length ? Number((totalDuration / hourRows.length).toFixed(2)) : 0,
-        answeredCalls,
-        missedCalls,
-        topAgent: callsPerAgent[0]?.agent || 'N/A',
-        callsPerAgent,
-        statusDistribution,
-        callsPerDay,
-      },
-    });
+    res.json({ data });
   } catch (error) {
     next(error);
   }
@@ -188,4 +144,11 @@ const exportPdf = async (req, res, next) => {
   }
 };
 
-module.exports = { fields, listCdr, stats, clear, importCsv, exportCsv, exportXlsx, exportPdf };
+const exportByFormat = async (req, res, next) => {
+  const f = String(req.query.format || 'csv').toLowerCase();
+  if (f === 'xlsx') return exportXlsx(req, res, next);
+  if (f === 'pdf') return exportPdf(req, res, next);
+  return exportCsv(req, res, next);
+};
+
+module.exports = { fields, listCdr, stats, clear, importCsv, exportCsv, exportXlsx, exportPdf, exportByFormat };
