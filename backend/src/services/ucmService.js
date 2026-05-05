@@ -8,6 +8,14 @@ const licenseService = require('./licenseService');
 
 let lastRawResponse = null;
 let importStatus = { running: false, startedAt: null, finishedAt: null, received: 0, inserted: 0, skipped: 0, error: null };
+let lastFieldStats = { detectedFields: [], fieldCounts: {}, sampleRecord: null };
+
+const dispositionMap = {
+  ANSWERED: 'contestada',
+  'NO ANSWER': 'perdida',
+  FAILED: 'fallida',
+  BUSY: 'ocupado',
+};
 
 const nullIfEmpty = (value) => {
   if (value === undefined || value === null) return null;
@@ -58,6 +66,21 @@ const login = async (baseUrl, user, password) => {
   return cookie;
 };
 
+
+const detectFields = (records) => {
+  const fieldCounts = {};
+  const fields = new Set();
+  records.forEach((record) => {
+    Object.keys(record || {}).forEach((field) => {
+      fields.add(field);
+      fieldCounts[field] = (fieldCounts[field] || 0) + 1;
+    });
+  });
+  lastFieldStats = { detectedFields: Array.from(fields).sort(), fieldCounts, sampleRecord: records[0] || null };
+};
+
+const normalizeDisposition = (value) => dispositionMap[String(value || '').trim().toUpperCase()] || nullIfEmpty(value);
+
 const fetchCDR = async (baseUrl, cookie, options = {}) => {
   const response = await postApi(baseUrl, {
     request: {
@@ -74,8 +97,9 @@ const fetchCDR = async (baseUrl, cookie, options = {}) => {
   lastRawResponse = response.data;
   await pool.query('INSERT INTO cdr_raw (payload) VALUES ($1)', [response.data]);
 
-  const records = response.data?.response?.cdr_root || [];
-  return Array.isArray(records) ? records : [];
+  const records = Array.isArray(response.data?.response?.cdr_root) ? response.data.response.cdr_root : [];
+  detectFields(records);
+  return records;
 };
 
 const transformRecord = (record) => ({
@@ -87,7 +111,7 @@ const transformRecord = (record) => ({
   end_time: record.end || null,
   duration: Number(record.duration || 0),
   billsec: Number(record.billsec || 0),
-  disposition: record.disposition,
+  disposition: normalizeDisposition(record.disposition),
   channel: record.channel,
   dstchannel: record.dstchannel,
   channel_ext: record.channel_ext,
@@ -121,6 +145,20 @@ const persistSyncState = async (lastStartTime) => {
   await pool.query('INSERT INTO sync_state (last_start_time, last_run) VALUES ($1, NOW())', [lastStartTime]);
 };
 
+const syncAgentsFromRecords = async (records) => {
+  for (const record of records) {
+    const extension = nullIfEmpty(record.channel_ext) || nullIfEmpty(record.src);
+    if (!extension) continue;
+    const name = nullIfEmpty(record.caller_name) || extension;
+    await pool.query(
+      `INSERT INTO agents (name, extension, role, enabled, last_seen_at)
+       VALUES ($1, $2, 'Sin asignar', true, NOW())
+       ON CONFLICT (extension) DO UPDATE SET last_seen_at = NOW()`,
+      [name, extension]
+    );
+  }
+};
+
 const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
   importStatus = { running: true, startedAt: new Date().toISOString(), finishedAt: null, received: 0, inserted: 0, skipped: 0, error: null };
 
@@ -151,8 +189,8 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
     const cookie = await login(baseUrl, map.ucm_api_user, map.ucm_api_password);
     const start_date = rangeStart.split(' ')[0];
     const end_date = rangeEnd.split(' ')[0];
-    console.log("UCM import mode:", mode);
-    console.log("UCM import range:", { startTime: rangeStart, endTime: rangeEnd, start_date, end_date });
+    console.log("mode:", mode);
+    console.log("range:", { startTime: rangeStart, endTime: rangeEnd, start_date, end_date });
     const rows = await fetchCDR(baseUrl, cookie, { numRecords: 500, offset: 0, startTime: rangeStart, endTime: rangeEnd });
     const transformed = rows.map(transformRecord).filter((row) => row.uniqueid);
     console.log("UCM received:", rows.length);
@@ -178,19 +216,8 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
       await persistSyncState(null);
     }
 
-    
-    await pool.query(`
-      INSERT INTO agents (name, extension, role, enabled, last_seen_at)
-      SELECT COALESCE(NULLIF(t.caller_name, ''), COALESCE(NULLIF(t.channel_ext, ''), NULLIF(t.src, ''))),
-             COALESCE(NULLIF(t.channel_ext, ''), NULLIF(t.src, '')),
-             'Sin asignar',
-             true,
-             NOW()
-      FROM cdr t
-      WHERE t.start_time >= NOW() - INTERVAL '1 day'
-        AND COALESCE(NULLIF(t.channel_ext, ''), NULLIF(t.src, '')) IS NOT NULL
-      ON CONFLICT (extension) DO UPDATE SET last_seen_at = NOW();
-    `);
+
+    await syncAgentsFromRecords(transformed);
 
     importStatus.running = false;
     importStatus.finishedAt = new Date().toISOString();
@@ -234,5 +261,6 @@ module.exports = {
   importCDR,
   testConnection,
   getDebugRaw: () => ({ raw: lastRawResponse }),
+  getFieldStats: () => lastFieldStats,
   getImportStatus: () => importStatus,
 };

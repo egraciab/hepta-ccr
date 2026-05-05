@@ -68,15 +68,6 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
-INSERT INTO agents (name, role, extension)
-SELECT * FROM (VALUES
-  ('Alice Johnson', 'Ventas', '1001'),
-  ('Bob Smith', 'Soporte', '1002'),
-  ('Carla Reyes', 'Cobranza', '1003'),
-  ('Diego Silva', 'N2', '1004'),
-  ('Eva Brown', 'Atención', '1005')
-) AS data(name, role, extension)
-WHERE NOT EXISTS (SELECT 1 FROM agents);
 
 INSERT INTO settings (key, value)
 SELECT * FROM (VALUES

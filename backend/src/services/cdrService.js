@@ -1,6 +1,9 @@
 const cdrModel = require('../models/cdrModel');
 const { parse } = require('csv-parse/sync');
 
+const dispositionMap = { ANSWERED: 'contestada', 'NO ANSWER': 'perdida', FAILED: 'fallida', BUSY: 'ocupado' };
+const normalizeDisposition = (value) => dispositionMap[String(value || '').trim().toUpperCase()] || value || null;
+
 const parseCsvBuffer = (buffer) => {
   const rows = parse(buffer, { columns: true, skip_empty_lines: true, trim: true });
   return rows.map((row, idx) => ({
@@ -12,7 +15,7 @@ const parseCsvBuffer = (buffer) => {
     end_time: row.end_time || null,
     duration: Number(row.duration || 0),
     billsec: Number(row.billsec || 0),
-    disposition: row.disposition || 'NO ANSWER',
+    disposition: normalizeDisposition(row.disposition),
     channel: row.channel || null,
     dstchannel: row.dstchannel || null,
     channel_ext: row.channel_ext || null,
