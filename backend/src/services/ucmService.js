@@ -67,6 +67,27 @@ const login = async (baseUrl, user, password) => {
 };
 
 
+const isValidCdrRecord = (record) => Boolean(record && typeof record === 'object' && nullIfEmpty(record.uniqueid));
+
+const extractCdrRecords = (cdrRoot = []) => {
+  if (!Array.isArray(cdrRoot)) return [];
+
+  return cdrRoot.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+
+    const subRecords = Object.keys(entry)
+      .filter((key) => /^sub_cdr_\d+$/.test(key))
+      .sort((a, b) => Number(a.replace('sub_cdr_', '')) - Number(b.replace('sub_cdr_', '')))
+      .map((key) => entry[key])
+      .filter(isValidCdrRecord);
+
+    if (subRecords.length) return subRecords;
+    if (isValidCdrRecord(entry)) return [entry];
+    if (isValidCdrRecord(entry.main_cdr)) return [entry.main_cdr];
+    return [];
+  });
+};
+
 const detectFields = (records) => {
   const fieldCounts = {};
   const fields = new Set();
@@ -97,7 +118,8 @@ const fetchCDR = async (baseUrl, cookie, options = {}) => {
   lastRawResponse = response.data;
   await pool.query('INSERT INTO cdr_raw (payload) VALUES ($1)', [response.data]);
 
-  const records = Array.isArray(response.data?.response?.cdr_root) ? response.data.response.cdr_root : [];
+  const cdrRoot = Array.isArray(response.data?.response?.cdr_root) ? response.data.response.cdr_root : [];
+  const records = extractCdrRecords(cdrRoot);
   detectFields(records);
   return records;
 };
@@ -141,9 +163,6 @@ const getBaseUrl = (map) => {
 };
 
 const getLastStartTime = async () => {
-  const syncState = await pool.query('SELECT last_start_time FROM sync_state ORDER BY id DESC LIMIT 1');
-  if (syncState.rowCount > 0 && syncState.rows[0].last_start_time) return syncState.rows[0].last_start_time;
-
   const dbMax = await pool.query('SELECT MAX(start_time) AS last_start_time FROM cdr');
   return dbMax.rows[0].last_start_time || null;
 };
@@ -166,6 +185,19 @@ const syncAgentsFromRecords = async (records) => {
   }
 };
 
+const isWithinImportRange = (record, rangeStart, rangeEnd, lastStartTime) => {
+  if (!record.start_time) return false;
+  const startedAt = new Date(record.start_time);
+  if (Number.isNaN(startedAt.getTime())) return false;
+
+  if (lastStartTime && startedAt <= new Date(lastStartTime)) return false;
+  if (rangeStart && startedAt < new Date(rangeStart)) return false;
+  if (rangeEnd && startedAt > new Date(rangeEnd)) return false;
+  return true;
+};
+
+const fingerprintBatch = (records) => records.map((record) => record.uniqueid).filter(Boolean).join('|');
+
 const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
   importStatus = { running: true, startedAt: new Date().toISOString(), finishedAt: null, received: 0, inserted: 0, skipped: 0, error: null };
 
@@ -181,17 +213,11 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
     }
 
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    let rangeStart;
-    let rangeEnd = endTime || now;
-
-    if (mode === 'full') {
-      rangeStart = startTime || '2026-01-01 00:00:00';
-    } else {
-      const lastStart = await getLastStartTime();
-      rangeStart = lastStart
-        ? new Date(new Date(lastStart).getTime() + 1000).toISOString().replace('T', ' ').slice(0, 19)
-        : '2026-01-01 00:00:00';
-    }
+    const lastStartTime = mode === 'incremental' ? await getLastStartTime() : null;
+    const rangeStart = mode === 'full'
+      ? (startTime || '2026-01-01 00:00:00')
+      : (lastStartTime ? new Date(new Date(lastStartTime).getTime() + 1000).toISOString().replace('T', ' ').slice(0, 19) : '2026-01-01 00:00:00');
+    const rangeEnd = endTime || now;
 
     const cookie = await login(baseUrl, map.ucm_api_user, map.ucm_api_password);
     const start_date = rangeStart.split(' ')[0];
@@ -200,11 +226,13 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
     console.log('IMPORT RANGE:', { startTime: rangeStart, endTime: rangeEnd, start_date, end_date });
 
     let offset = 0;
-    const limit = 100;
+    const limit = 500;
     let totalFetched = 0;
+    let totalProcessed = 0;
     let inserted = 0;
-    let transformedCount = 0;
+    let skipped = 0;
     let newestStart = null;
+    const seenPageFingerprints = new Set();
 
     while (true) {
       const batch = await fetchCDR(baseUrl, cookie, {
@@ -214,21 +242,32 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
         endTime: rangeEnd,
       });
 
-      console.log('FETCH PAGE:', { offset, received: batch.length });
+      const batchSize = batch.length;
+      console.log('FETCH PAGE:', { offset, received: batchSize });
 
-      if (!batch || batch.length === 0) break;
+      if (!batch || batchSize === 0) break;
 
-      totalFetched += batch.length;
+      const pageFingerprint = fingerprintBatch(batch);
+      if (pageFingerprint && seenPageFingerprints.has(pageFingerprint)) {
+        console.log('PAGINATION BREAK: repeated batch', { offset, batchSize, totalFetched });
+        break;
+      }
+      if (pageFingerprint) seenPageFingerprints.add(pageFingerprint);
+
+      totalFetched += batchSize;
 
       const transformed = batch.map(transformRecord).filter((row) => row.uniqueid);
-      transformedCount += transformed.length;
+      const filtered = transformed.filter((row) => isWithinImportRange(row, rangeStart, rangeEnd, lastStartTime));
+      totalProcessed += filtered.length;
+      skipped += transformed.length - filtered.length;
 
-      const batchInserted = await cdrModel.insertManyCdr(transformed);
+      const batchInserted = await cdrModel.insertManyCdr(filtered);
       inserted += batchInserted;
+      skipped += filtered.length - batchInserted;
 
-      await syncAgentsFromRecords(transformed);
+      await syncAgentsFromRecords(filtered);
 
-      const batchNewestStart = transformed
+      const batchNewestStart = filtered
         .map((row) => (row.start_time ? new Date(row.start_time) : null))
         .filter(Boolean)
         .sort((a, b) => b - a)[0];
@@ -238,16 +277,16 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
       }
 
       offset += limit;
-      console.log('PAGINATION:', { offset, batch: batch.length, totalFetched });
-
       importStatus.received = totalFetched;
       importStatus.inserted = inserted;
-      importStatus.skipped = transformedCount - inserted;
+      importStatus.skipped = skipped;
 
-      if (batch.length < limit) break;
+      console.log({ offset, batchSize, totalProcessed, inserted, skipped });
+      console.log('PAGINATION:', { offset, batch: batchSize, totalFetched });
+
+      if (batchSize < limit) break;
     }
 
-    const skipped = transformedCount - inserted;
     importStatus.received = totalFetched;
     importStatus.inserted = inserted;
     importStatus.skipped = skipped;
@@ -259,7 +298,7 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
       await settingModel.upsertSetting({ key: 'ucm_last_imported_start_time', value: newestIso });
       await persistSyncState(newestIso);
     } else {
-      await persistSyncState(null);
+      await persistSyncState(lastStartTime || null);
     }
 
     importStatus.running = false;
