@@ -1,0 +1,5 @@
+node_modules/
+cookies.txt
+*.sh
+test_*.js
+package-lock.json
