@@ -1,7 +1,7 @@
 const pool = require('../config/db');
 
 const AGENT_DISPLAY_SQL = "COALESCE(NULLIF(agents.alias, ''), NULLIF(agents.name, ''), NULLIF(cdr.caller_name, ''), NULLIF(cdr.channel_ext, ''), NULLIF(cdr.src, ''), '-')";
-const CDR_JOIN_SQL = "FROM cdr LEFT JOIN agents ON agents.extension = COALESCE(NULLIF(cdr.channel_ext, ''), NULLIF(cdr.src, ''))";
+const CDR_JOIN_SQL = "FROM cdr LEFT JOIN agents ON agents.extension = COALESCE(NULLIF(cdr.channel_ext, ''), NULLIF(cdr.src, ''), NULLIF(cdr.dstchannel_ext, ''), NULLIF(cdr.dst, ''))";
 
 const buildWhere = (filters = {}) => {
   const clauses = ['(agents.id IS NULL OR agents.enabled = true)'];
@@ -17,7 +17,7 @@ const buildWhere = (filters = {}) => {
   }
   if (filters.agent) {
     values.push(filters.agent);
-    clauses.push(`${AGENT_DISPLAY_SQL} = $${values.length}`);
+    clauses.push(`(cdr.src = $${values.length} OR cdr.dst = $${values.length} OR cdr.channel_ext = $${values.length} OR cdr.dstchannel_ext = $${values.length} OR ${AGENT_DISPLAY_SQL} = $${values.length})`);
   }
   if (filters.disposition) {
     values.push(filters.disposition);
@@ -130,6 +130,13 @@ const getDashboardStats = async (filters) => {
   };
 };
 
+const buildUniqueKey = (record) => {
+  if (record.uniqueid) return record.uniqueid;
+  if (record.unique_id) return record.unique_id;
+  if (record.start_time && record.src && record.dst) return `${record.start_time}|${record.src}|${record.dst}`;
+  return null;
+};
+
 const insertManyCdr = async (records) => {
   if (!records.length) return 0;
   const client = await pool.connect();
@@ -140,7 +147,18 @@ const insertManyCdr = async (records) => {
                ON CONFLICT (uniqueid) DO NOTHING`;
     let inserted = 0;
     for (const r of records) {
-      const res = await client.query(q, [r.uniqueid, r.src, r.dst, r.start_time, r.answer_time, r.end_time, r.duration, r.billsec, r.disposition, r.channel, r.dstchannel, r.channel_ext, r.dstchannel_ext, r.accountcode, r.caller_name, r.action_owner, r.action_type, r.src_trunk_name, r.dst_trunk_name, r.device_info, r.lastapp, r.lastdata, r.raw]);
+      const unique_id = buildUniqueKey(r);
+      if (!unique_id) {
+        console.log('INSERT CHECK:', { unique_id, exists: true });
+        continue;
+      }
+
+      const existsResult = await client.query('SELECT EXISTS (SELECT 1 FROM cdr WHERE cdr.uniqueid = $1) AS exists', [unique_id]);
+      const exists = existsResult.rows[0].exists;
+      console.log('INSERT CHECK:', { unique_id, exists });
+      if (exists) continue;
+
+      const res = await client.query(q, [unique_id, r.src, r.dst, r.start_time, r.answer_time, r.end_time, r.duration, r.billsec, r.disposition, r.channel, r.dstchannel, r.channel_ext, r.dstchannel_ext, r.accountcode, r.caller_name, r.action_owner, r.action_type, r.src_trunk_name, r.dst_trunk_name, r.device_info, r.lastapp, r.lastdata, r.raw]);
       inserted += res.rowCount;
     }
     await client.query('COMMIT');

@@ -216,7 +216,7 @@ const loadAgents = async () => {
   agentFilter.innerHTML = '<option value="">Todos</option>';
   agents.forEach((agent) => {
     const option = document.createElement('option');
-    option.value = agentDisplayName(agent);
+    option.value = agent.extension;
     option.textContent = agentDisplayName(agent);
     agentFilter.appendChild(option);
   });

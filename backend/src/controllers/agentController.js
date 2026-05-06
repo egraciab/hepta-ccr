@@ -2,8 +2,7 @@ const agentService = require('../services/agentService');
 
 const list = async (req, res, next) => {
   try {
-    const includeDisabled = String(req.query.includeDisabled || 'false') === 'true';
-    res.json({ data: await agentService.listAgents({ includeDisabled }) });
+    res.json({ data: await agentService.listAgents() });
   } catch (error) {
     next(error);
   }

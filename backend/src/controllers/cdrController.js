@@ -121,22 +121,64 @@ const exportXlsx = async (req, res, next) => {
 const exportPdf = async (req, res, next) => {
   try {
     const rows = await getExportRows(req.query);
+    const filters = parseFilters(req.query);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename="reporte_llamadas.pdf"');
 
-    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const doc = new PDFDocument({ margin: 36, size: 'A4' });
     doc.pipe(res);
 
-    doc.fontSize(16).text('Reporte de llamadas - HEPTA CCR', { align: 'center' });
-    doc.moveDown();
+    const rangeLabel = `Rango: ${filters.startDate || 'inicio'} - ${filters.endDate || 'fin'}`;
+    doc.fontSize(18).fillColor('#111827').text('Reporte de Llamadas', { align: 'center' });
+    doc.moveDown(0.3);
+    doc.fontSize(9).fillColor('#4b5563').text(rangeLabel, { align: 'center' });
+    doc.moveDown(1);
 
-    rows.slice(0, 120).forEach((row) => {
-      doc
-        .fontSize(9)
-        .text(`${row.call_date.toISOString()} | ${row.source} -> ${row.destination} | ${row.duration}s | ${statusLabel[row.status] || row.status} | ${row.agent}`);
-    });
+    const columns = [
+      { label: 'Fecha', x: 36, width: 112 },
+      { label: 'Origen', x: 148, width: 70 },
+      { label: 'Destino', x: 218, width: 70 },
+      { label: 'Duración', x: 288, width: 62 },
+      { label: 'Estado', x: 350, width: 82 },
+      { label: 'Agente', x: 432, width: 126 },
+    ];
+    const rowHeight = 20;
 
+    const drawHeader = () => {
+      const y = doc.y;
+      doc.rect(36, y, 522, rowHeight).fill('#e5e7eb').stroke('#9ca3af');
+      doc.fillColor('#111827').fontSize(8).font('Helvetica-Bold');
+      columns.forEach((column) => doc.text(column.label, column.x + 4, y + 6, { width: column.width - 8, align: 'left' }));
+      doc.y = y + rowHeight;
+      doc.font('Helvetica');
+    };
+
+    const drawRow = (row) => {
+      if (doc.y + rowHeight > doc.page.height - 36) {
+        doc.addPage();
+        drawHeader();
+      }
+      const y = doc.y;
+      doc.rect(36, y, 522, rowHeight).stroke('#d1d5db');
+      doc.fillColor('#111827').fontSize(7);
+      const values = [
+        row.call_date ? new Date(row.call_date).toLocaleString('es-ES') : '',
+        row.source || '',
+        row.destination || '',
+        `${row.billsec > 0 ? row.billsec : row.duration || 0}s`,
+        statusLabel[row.status] || row.status || '',
+        row.agent || '-',
+      ];
+      columns.forEach((column, index) => doc.text(String(values[index]), column.x + 4, y + 6, { width: column.width - 8, align: index === 3 ? 'right' : 'left' }));
+      doc.y = y + rowHeight;
+    };
+
+    drawHeader();
+    rows.slice(0, 500).forEach(drawRow);
+
+    doc.moveDown(0.8);
+    doc.fontSize(8).fillColor('#6b7280').text(`Total exportado: ${rows.length}`);
     doc.end();
   } catch (error) {
     next(error);

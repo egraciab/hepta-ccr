@@ -102,8 +102,15 @@ const fetchCDR = async (baseUrl, cookie, options = {}) => {
   return records;
 };
 
+const buildRecordUniqueKey = (record) => {
+  const uniqueId = nullIfEmpty(record.uniqueid) || nullIfEmpty(record.unique_id);
+  if (uniqueId) return uniqueId;
+  if (record.start && record.src && record.dst) return `${record.start}|${record.src}|${record.dst}`;
+  return null;
+};
+
 const transformRecord = (record) => ({
-  uniqueid: record.uniqueid,
+  uniqueid: buildRecordUniqueKey(record),
   src: record.src,
   dst: record.dst,
   start_time: record.start,
@@ -190,7 +197,7 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
     const start_date = rangeStart.split(' ')[0];
     const end_date = rangeEnd.split(' ')[0];
     console.log("mode:", mode);
-    console.log("range:", { startTime: rangeStart, endTime: rangeEnd, start_date, end_date });
+    console.log("IMPORT RANGE:", { startTime: rangeStart, endTime: rangeEnd, start_date, end_date });
     const rows = await fetchCDR(baseUrl, cookie, { numRecords: 500, offset: 0, startTime: rangeStart, endTime: rangeEnd });
     const transformed = rows.map(transformRecord).filter((row) => row.uniqueid);
     console.log("UCM received:", rows.length);
