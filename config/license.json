@@ -1,0 +1,11 @@
+{
+  "license_key": "TRIAL-HEPTA-LOCAL",
+  "customer": "Demo",
+  "type": "trial",
+  "issued_at": "2026-01-01T00:00:00.000Z",
+  "valid_until": "2026-12-31T23:59:59.000Z",
+  "support_until": "2026-12-31T23:59:59.000Z",
+  "features": ["full"],
+  "bound_to": "",
+  "signature": "placeholder"
+}
