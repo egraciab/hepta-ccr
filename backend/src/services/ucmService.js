@@ -196,24 +196,63 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
     const cookie = await login(baseUrl, map.ucm_api_user, map.ucm_api_password);
     const start_date = rangeStart.split(' ')[0];
     const end_date = rangeEnd.split(' ')[0];
-    console.log("mode:", mode);
-    console.log("IMPORT RANGE:", { startTime: rangeStart, endTime: rangeEnd, start_date, end_date });
-    const rows = await fetchCDR(baseUrl, cookie, { numRecords: 500, offset: 0, startTime: rangeStart, endTime: rangeEnd });
-    const transformed = rows.map(transformRecord).filter((row) => row.uniqueid);
-    console.log("UCM received:", rows.length);
+    console.log('mode:', mode);
+    console.log('IMPORT RANGE:', { startTime: rangeStart, endTime: rangeEnd, start_date, end_date });
 
-    importStatus.received = rows.length;
+    let offset = 0;
+    const limit = 100;
+    let totalFetched = 0;
+    let inserted = 0;
+    let transformedCount = 0;
+    let newestStart = null;
 
-    const inserted = await cdrModel.insertManyCdr(transformed);
+    while (true) {
+      const batch = await fetchCDR(baseUrl, cookie, {
+        offset,
+        numRecords: limit,
+        startTime: rangeStart,
+        endTime: rangeEnd,
+      });
+
+      console.log('FETCH PAGE:', { offset, received: batch.length });
+
+      if (!batch || batch.length === 0) break;
+
+      totalFetched += batch.length;
+
+      const transformed = batch.map(transformRecord).filter((row) => row.uniqueid);
+      transformedCount += transformed.length;
+
+      const batchInserted = await cdrModel.insertManyCdr(transformed);
+      inserted += batchInserted;
+
+      await syncAgentsFromRecords(transformed);
+
+      const batchNewestStart = transformed
+        .map((row) => (row.start_time ? new Date(row.start_time) : null))
+        .filter(Boolean)
+        .sort((a, b) => b - a)[0];
+
+      if (batchNewestStart && (!newestStart || batchNewestStart > newestStart)) {
+        newestStart = batchNewestStart;
+      }
+
+      offset += limit;
+      console.log('PAGINATION:', { offset, batch: batch.length, totalFetched });
+
+      importStatus.received = totalFetched;
+      importStatus.inserted = inserted;
+      importStatus.skipped = transformedCount - inserted;
+
+      if (batch.length < limit) break;
+    }
+
+    const skipped = transformedCount - inserted;
+    importStatus.received = totalFetched;
     importStatus.inserted = inserted;
-    importStatus.skipped = transformed.length - inserted;
-    console.log("UCM inserted:", inserted);
-    console.log("UCM skipped:", importStatus.skipped);
+    importStatus.skipped = skipped;
 
-    const newestStart = transformed
-      .map((row) => (row.start_time ? new Date(row.start_time) : null))
-      .filter(Boolean)
-      .sort((a, b) => b - a)[0];
+    console.log('IMPORT RESULT:', { totalFetched, inserted, skipped });
 
     if (newestStart) {
       const newestIso = newestStart.toISOString();
@@ -222,9 +261,6 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
     } else {
       await persistSyncState(null);
     }
-
-
-    await syncAgentsFromRecords(transformed);
 
     importStatus.running = false;
     importStatus.finishedAt = new Date().toISOString();
