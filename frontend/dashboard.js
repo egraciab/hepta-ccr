@@ -270,7 +270,8 @@ const clearFilters = () => {
   el('cdrStatus').value = '';
   el('cdrSearch').value = '';
   cdrState.hour = '';
-  applyCdrFilters();
+  cdrState.page = 1;
+  Promise.all([loadDashboard(), loadCdr()]).catch((error) => notify(error.message, true));
 };
 
 const downloadFrom = async (url, filename) => {
@@ -308,7 +309,7 @@ const initEvents = () => {
     const end = el('fullImportEnd').value;
     if (!start || !end) { notify('Selecciona fecha desde/hasta', true); return; }
     const payload = { startTime: `${start} 00:00:00`, endTime: `${end} 23:59:59` };
-    notify('Importación completa en proceso');
+    notify('Importando rango seleccionado en proceso');
     api('/ucm/import/full', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       .then(() => pollImportStatus())
       .catch((error) => notify(error.message, true));
@@ -510,7 +511,7 @@ const pollImportStatus = async () => {
   const tick = async () => {
     const response = await api('/ucm/import/status');
     const data = (await response.json()).data;
-    const msg = `Recibidos ${data.received} | Insertados ${data.inserted} | Omitidos ${data.skipped}`;
+    const msg = `Recibidos ${data.received} | Procesados ${data.processed || 0} | Insertados ${data.inserted} | Duplicados ${data.duplicates || 0} | Fuera de rango ${data.outOfRange || 0}`;
     notify(`Importando CDR... ${msg}`);
     const statusEl = document.getElementById('fullImportStatus'); if (statusEl) statusEl.textContent = msg;
     if (data.running) {

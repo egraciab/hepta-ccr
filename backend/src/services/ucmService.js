@@ -7,7 +7,7 @@ const pool = require('../config/db');
 const licenseService = require('./licenseService');
 
 let lastRawResponse = null;
-let importStatus = { running: false, startedAt: null, finishedAt: null, received: 0, inserted: 0, skipped: 0, error: null };
+let importStatus = { running: false, startedAt: null, finishedAt: null, received: 0, processed: 0, inserted: 0, duplicates: 0, outOfRange: 0, skipped: 0, error: null };
 let lastFieldStats = { detectedFields: [], fieldCounts: {}, sampleRecord: null };
 
 const dispositionMap = {
@@ -21,6 +21,35 @@ const nullIfEmpty = (value) => {
   if (value === undefined || value === null) return null;
   const str = String(value).trim();
   return str === '' ? null : str;
+};
+
+const pad2 = (value) => String(value).padStart(2, '0');
+
+function parseLocalDateTime(value) {
+  if (!value) return null;
+  const s = String(value).trim();
+  const match = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const [, y, mo, d, h, mi, se] = match;
+  return new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(se));
+}
+
+function normalizeInputRangeDate(value, endOfDay = false) {
+  if (!value) return null;
+  const s = String(value).trim();
+  if (s.length === 10) {
+    return endOfDay ? `${s} 23:59:59` : `${s} 00:00:00`;
+  }
+  return s.replace('T', ' ').slice(0, 19);
+}
+
+const formatLocalDateTime = (date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+
+const addSecondsToLocalDateTime = (value, seconds) => {
+  const parsed = parseLocalDateTime(value);
+  if (!parsed) return null;
+  parsed.setSeconds(parsed.getSeconds() + seconds);
+  return formatLocalDateTime(parsed);
 };
 
 const getSettingsMap = async () => {
@@ -37,7 +66,7 @@ const assertLicenseEnabled = () => {
 };
 
 const postApi = async (baseUrl, payload) => axios.post(`${baseUrl}/api`, payload, {
-  timeout: 20000,
+  timeout: 60000,
   headers: { 'Content-Type': 'application/json' },
   httpsAgent: new https.Agent({ rejectUnauthorized: false }),
 });
@@ -164,7 +193,10 @@ const getBaseUrl = (map) => {
 
 const getLastStartTime = async () => {
   const dbMax = await pool.query('SELECT MAX(start_time) AS last_start_time FROM cdr');
-  return dbMax.rows[0].last_start_time || null;
+  const value = dbMax.rows[0].last_start_time;
+  if (!value) return null;
+  if (value instanceof Date) return formatLocalDateTime(value);
+  return normalizeInputRangeDate(value);
 };
 
 const persistSyncState = async (lastStartTime) => {
@@ -186,20 +218,28 @@ const syncAgentsFromRecords = async (records) => {
 };
 
 const isWithinImportRange = (record, rangeStart, rangeEnd, lastStartTime) => {
-  if (!record.start_time) return false;
-  const startedAt = new Date(record.start_time);
-  if (Number.isNaN(startedAt.getTime())) return false;
+  const startedAt = parseLocalDateTime(record.start_time);
+  const start = parseLocalDateTime(rangeStart);
+  const end = parseLocalDateTime(rangeEnd);
+  const last = parseLocalDateTime(lastStartTime);
 
-  if (lastStartTime && startedAt <= new Date(lastStartTime)) return false;
-  if (rangeStart && startedAt < new Date(rangeStart)) return false;
-  if (rangeEnd && startedAt > new Date(rangeEnd)) return false;
+  if (!startedAt) return false;
+  if (last && startedAt <= last) return false;
+  if (start && startedAt < start) return false;
+  if (end && startedAt > end) return false;
+
   return true;
 };
 
-const fingerprintBatch = (records) => records.map((record) => record.uniqueid).filter(Boolean).join('|');
+const fingerprintBatch = (records) => {
+  const first = records.slice(0, 5).map((record) => record.uniqueid).join('|');
+  const last = records.slice(-5).map((record) => record.uniqueid).join('|');
+  return `${records.length}-${first}-${last}`;
+};
+
 
 const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
-  importStatus = { running: true, startedAt: new Date().toISOString(), finishedAt: null, received: 0, inserted: 0, skipped: 0, error: null };
+  importStatus = { running: true, startedAt: new Date().toISOString(), finishedAt: null, received: 0, processed: 0, inserted: 0, duplicates: 0, outOfRange: 0, skipped: 0, error: null };
 
   try {
     assertLicenseEnabled();
@@ -212,12 +252,12 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
       throw error;
     }
 
-    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const now = formatLocalDateTime(new Date());
     const lastStartTime = mode === 'incremental' ? await getLastStartTime() : null;
     const rangeStart = mode === 'full'
-      ? (startTime || '2026-01-01 00:00:00')
-      : (lastStartTime ? new Date(new Date(lastStartTime).getTime() + 1000).toISOString().replace('T', ' ').slice(0, 19) : '2026-01-01 00:00:00');
-    const rangeEnd = endTime || now;
+      ? (normalizeInputRangeDate(startTime, false) || '2026-01-01 00:00:00')
+      : (lastStartTime ? addSecondsToLocalDateTime(lastStartTime, 1) : '2026-01-01 00:00:00');
+    const rangeEnd = normalizeInputRangeDate(endTime, true) || now;
 
     const cookie = await login(baseUrl, map.ucm_api_user, map.ucm_api_password);
     const start_date = rangeStart.split(' ')[0];
@@ -230,7 +270,8 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
     let totalFetched = 0;
     let totalProcessed = 0;
     let inserted = 0;
-    let skipped = 0;
+    let duplicates = 0;
+    let outOfRange = 0;
     let newestStart = null;
     const seenPageFingerprints = new Set();
 
@@ -258,17 +299,28 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
 
       const transformed = batch.map(transformRecord).filter((row) => row.uniqueid);
       const filtered = transformed.filter((row) => isWithinImportRange(row, rangeStart, rangeEnd, lastStartTime));
+      const batchOutOfRange = transformed.length - filtered.length;
       totalProcessed += filtered.length;
-      skipped += transformed.length - filtered.length;
+      outOfRange += batchOutOfRange;
+
+      console.log('PAGE RANGE SAMPLE:', {
+        offset,
+        batchSize,
+        firstStart: transformed[0]?.start_time,
+        lastStart: transformed[transformed.length - 1]?.start_time,
+        rangeStart,
+        rangeEnd,
+        filteredCount: filtered.length,
+      });
 
       const batchInserted = await cdrModel.insertManyCdr(filtered);
       inserted += batchInserted;
-      skipped += filtered.length - batchInserted;
+      duplicates += filtered.length - batchInserted;
 
       await syncAgentsFromRecords(filtered);
 
       const batchNewestStart = filtered
-        .map((row) => (row.start_time ? new Date(row.start_time) : null))
+        .map((row) => parseLocalDateTime(row.start_time))
         .filter(Boolean)
         .sort((a, b) => b - a)[0];
 
@@ -278,25 +330,31 @@ const importCDR = async ({ mode = 'incremental', startTime, endTime } = {}) => {
 
       offset += limit;
       importStatus.received = totalFetched;
+      importStatus.processed = totalProcessed;
       importStatus.inserted = inserted;
-      importStatus.skipped = skipped;
+      importStatus.duplicates = duplicates;
+      importStatus.outOfRange = outOfRange;
+      importStatus.skipped = duplicates + outOfRange;
 
-      console.log({ offset, batchSize, totalProcessed, inserted, skipped });
+      console.log({ offset, batchSize, totalProcessed, inserted, skipped: importStatus.skipped, duplicates, outOfRange });
       console.log('PAGINATION:', { offset, batch: batchSize, totalFetched });
 
       if (batchSize < limit) break;
     }
 
     importStatus.received = totalFetched;
+    importStatus.processed = totalProcessed;
     importStatus.inserted = inserted;
-    importStatus.skipped = skipped;
+    importStatus.duplicates = duplicates;
+    importStatus.outOfRange = outOfRange;
+    importStatus.skipped = duplicates + outOfRange;
 
-    console.log('IMPORT RESULT:', { totalFetched, inserted, skipped });
+    console.log('IMPORT RESULT:', { totalFetched, processed: totalProcessed, inserted, skipped: importStatus.skipped, duplicates, outOfRange });
 
     if (newestStart) {
-      const newestIso = newestStart.toISOString();
-      await settingModel.upsertSetting({ key: 'ucm_last_imported_start_time', value: newestIso });
-      await persistSyncState(newestIso);
+      const newestValue = formatLocalDateTime(newestStart);
+      await settingModel.upsertSetting({ key: 'ucm_last_imported_start_time', value: newestValue });
+      await persistSyncState(newestValue);
     } else {
       await persistSyncState(lastStartTime || null);
     }
@@ -331,7 +389,7 @@ const testConnection = async () => {
   try {
     await login(baseUrl, map.ucm_api_user, map.ucm_api_password);
     return { success: true, message: `Conexión exitosa con ${baseUrl}` };
-    } catch (error) {
+  } catch (error) {
     return { success: false, message: error.message };
   }
 };
