@@ -1,5 +1,8 @@
-const API_BASE = '/api';
-
+const API_BASE = window.location.hostname === 'ccr.hepta.com.py'
+  ? '/api'
+  : 'http://10.10.20.232:3000/api';
+//const API_BASE = '/api';
+//const API_BASE = 'http://10.10.20.232:3000/api';
 let token = localStorage.getItem('token') || '';
 let currentUser = null;
 let licenseStatus = null;
