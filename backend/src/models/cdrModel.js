@@ -2,27 +2,6 @@ const pool = require('../config/db');
 
 const AGENT_DISPLAY_SQL = "COALESCE(NULLIF(agents.alias, ''), NULLIF(agents.name, ''), NULLIF(cdr.caller_name, ''), NULLIF(cdr.channel_ext, ''), NULLIF(cdr.src, ''), '-')";
 const CDR_JOIN_SQL = "FROM cdr LEFT JOIN agents ON agents.extension = COALESCE(NULLIF(cdr.channel_ext, ''), NULLIF(cdr.src, ''), NULLIF(cdr.dstchannel_ext, ''), NULLIF(cdr.dst, ''))";
-const STATUS_ALIASES = {
-  ANSWERED: ['ANSWERED', 'contestada', 'contestadas'],
-  'NO ANSWER': ['NO ANSWER', 'perdida', 'perdidas'],
-  FAILED: ['FAILED', 'fallida', 'fallidas'],
-  BUSY: ['BUSY', 'ocupado'],
-};
-
-const normalizeStatus = (status) => {
-  const raw = String(status || '').trim();
-  const upper = raw.toUpperCase();
-  return Object.keys(STATUS_ALIASES).find((key) => STATUS_ALIASES[key].some((value) => value.toUpperCase() === upper)) || raw;
-};
-
-const statusValues = (status) => STATUS_ALIASES[normalizeStatus(status)] || [status];
-const STATUS_CASE_SQL = `CASE
-  WHEN cdr.disposition IN ('ANSWERED', 'contestada', 'contestadas') THEN 'ANSWERED'
-  WHEN cdr.disposition IN ('NO ANSWER', 'perdida', 'perdidas') THEN 'NO ANSWER'
-  WHEN cdr.disposition IN ('FAILED', 'fallida', 'fallidas') THEN 'FAILED'
-  WHEN cdr.disposition IN ('BUSY', 'ocupado') THEN 'BUSY'
-  ELSE cdr.disposition
-END`;
 
 const buildWhere = (filters = {}) => {
   const clauses = ['(agents.id IS NULL OR agents.enabled = true)'];
@@ -41,12 +20,8 @@ const buildWhere = (filters = {}) => {
     clauses.push(`(cdr.src = $${values.length} OR cdr.dst = $${values.length} OR cdr.channel_ext = $${values.length} OR cdr.dstchannel_ext = $${values.length} OR ${AGENT_DISPLAY_SQL} = $${values.length})`);
   }
   if (filters.disposition) {
-    const dispositions = statusValues(filters.disposition);
-    const placeholders = dispositions.map((value) => {
-      values.push(value);
-      return `$${values.length}`;
-    });
-    clauses.push(`cdr.disposition IN (${placeholders.join(', ')})`);
+    values.push(filters.disposition);
+    clauses.push(`cdr.disposition = $${values.length}`);
   }
   if (filters.q) {
     values.push(`%${filters.q}%`);
@@ -91,7 +66,7 @@ const getCdr = async (filters) => {
             cdr.start_time AS call_date,
             cdr.duration,
             cdr.billsec,
-            ${STATUS_CASE_SQL} AS status,
+            cdr.disposition AS status,
             ${AGENT_DISPLAY_SQL} AS agent
      ${CDR_JOIN_SQL}
      ${where}
@@ -116,8 +91,8 @@ const getDashboardStats = async (filters) => {
   const [totals, perAgent, perDay, perStatus, perHour] = await Promise.all([
     pool.query(`SELECT COUNT(*)::int AS total_calls,
                        COALESCE(ROUND(AVG(CASE WHEN cdr.billsec > 0 THEN cdr.billsec ELSE cdr.duration END)::numeric,2),0) AS average_duration,
-                       COALESCE(SUM(CASE WHEN cdr.disposition IN ('ANSWERED','contestada','contestadas') THEN 1 ELSE 0 END),0)::int AS answered_calls,
-                       COALESCE(SUM(CASE WHEN cdr.disposition IN ('NO ANSWER','perdida','perdidas','FAILED','fallida','fallidas','BUSY','ocupado') THEN 1 ELSE 0 END),0)::int AS missed_calls
+                       COALESCE(SUM(CASE WHEN cdr.disposition='contestada' THEN 1 ELSE 0 END),0)::int AS answered_calls,
+                       COALESCE(SUM(CASE WHEN cdr.disposition IN ('perdida','fallida','ocupado') THEN 1 ELSE 0 END),0)::int AS missed_calls
                 ${CDR_JOIN_SQL}
                 ${where}`, values),
     pool.query(`SELECT ${AGENT_DISPLAY_SQL} AS agent, COUNT(*)::int AS total
@@ -130,10 +105,10 @@ const getDashboardStats = async (filters) => {
                 ${where}
                 GROUP BY DATE(cdr.start_time)
                 ORDER BY day ASC`, values),
-    pool.query(`SELECT ${STATUS_CASE_SQL} AS status, COUNT(*)::int AS total
+    pool.query(`SELECT cdr.disposition AS status, COUNT(*)::int AS total
                 ${CDR_JOIN_SQL}
                 ${where}
-                GROUP BY 1
+                GROUP BY cdr.disposition
                 ORDER BY total DESC`, values),
     pool.query(`SELECT EXTRACT(HOUR FROM cdr.start_time)::int AS hour, COUNT(*)::int AS total
                 ${CDR_JOIN_SQL}

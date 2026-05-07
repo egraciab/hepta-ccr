@@ -1,5 +1,8 @@
-const API_BASE = '/api';
-
+const API_BASE = window.location.hostname === 'ccr.hepta.com.py'
+  ? '/api'
+  : 'http://10.10.20.232:3000/api';
+//const API_BASE = '/api';
+//const API_BASE = 'http://10.10.20.232:3000/api';
 let token = localStorage.getItem('token') || '';
 let currentUser = null;
 let licenseStatus = null;
@@ -9,15 +12,7 @@ let cdrState = { page: 1, limit: 15, sortBy: 'call_date', sortOrder: 'desc', hou
 let agentsCache = [];
 let autoSyncTimer = null;
 
-const STATUS_MAP = {
-  ANSWERED: 'Contestada',
-  FAILED: 'Fallida',
-  'NO ANSWER': 'Perdida',
-  BUSY: 'Ocupado',
-};
-const STATUS_ORDER = ['ANSWERED', 'NO ANSWER', 'FAILED', 'BUSY'];
-const STATUS_COLORS = { ANSWERED: '#10b981', 'NO ANSWER': '#f59e0b', FAILED: '#ef4444', BUSY: '#3b82f6' };
-const STATUS_ALIASES = { contestada: 'ANSWERED', perdida: 'NO ANSWER', fallida: 'FAILED', ocupado: 'BUSY' };
+const statusMap = { contestada: 'Contestadas', perdida: 'Perdidas', fallida: 'Fallidas', ocupado: 'Ocupado' };
 
 const el = (id) => document.getElementById(id);
 const spinner = el('spinner');
@@ -82,22 +77,13 @@ const chartPalette = () => {
   return { text: dark ? '#e5e7eb' : '#334155', grid: dark ? 'rgba(203,213,225,0.2)' : 'rgba(100,116,139,0.2)' };
 };
 
-const statusKey = (status) => {
-  const raw = String(status || '').trim();
-  const upper = raw.toUpperCase();
-  return STATUS_MAP[upper] ? upper : STATUS_ALIASES[raw.toLowerCase()] || upper;
-};
-
-const statusLabel = (status) => STATUS_MAP[statusKey(status)] || status || '-';
-
 const chartClickFilter = (type, value) => {
   if (type === 'day') {
-    const day = toDateInputValue(value);
-    el('cdrStart').value = day;
-    el('cdrEnd').value = day;
+    el('cdrStart').value = value;
+    el('cdrEnd').value = value;
   }
   if (type === 'agent') el('agentFilter').value = value;
-  if (type === 'status') el('cdrStatus').value = statusKey(value);
+  if (type === 'status') el('cdrStatus').value = value;
   if (type === 'hour') cdrState.hour = String(value);
   cdrState.page = 1;
   openSection('cdr');
@@ -127,97 +113,11 @@ const drawChart = (id, config) => {
   });
 };
 
-const formatDateInput = (date) => {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-};
-
-const toDateInputValue = (value) => {
-  const match = String(value || '').match(/^\d{4}-\d{2}-\d{2}/);
-  return match ? match[0] : formatDateInput(new Date(value));
-};
-
-const formatDateLabel = (value) => {
-  if (!value) return '';
-  const dateInput = toDateInputValue(value);
-  const [year, month, day] = dateInput.split('-').map(Number);
-  const date = year && month && day ? new Date(year, month - 1, day) : new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('es-ES');
-};
-
-const selectedRangeLabel = () => {
-  const start = el('startDate').value;
-  const end = el('endDate').value;
-  if (!start && !end) return 'Todo el periodo';
-  return `${start ? formatDateLabel(`${start}T00:00:00`) : 'Inicio'} - ${end ? formatDateLabel(`${end}T00:00:00`) : 'Fin'}`;
-};
-
-const updateChartTitles = () => {
-  const range = selectedRangeLabel();
-  el('callsPerDayTitle').textContent = `Llamadas por día (${range})`;
-  el('callsPerAgentTitle').textContent = `Llamadas por agente (${range})`;
-  el('statusChartTitle').textContent = `Distribución de estado (${range})`;
-  el('hourChartTitle').textContent = `Llamadas por hora (${range})`;
-};
-
 const queryFromRange = (a = 'startDate', b = 'endDate') => {
   const params = new URLSearchParams();
   if (el(a).value) params.append('startDate', `${el(a).value}T00:00:00.000Z`);
   if (el(b).value) params.append('endDate', `${el(b).value}T23:59:59.999Z`);
   return params;
-};
-
-const getQuickDateRange = (range) => {
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const end = new Date(start);
-  const mondayOffset = (start.getDay() + 6) % 7;
-
-  if (range === 'yesterday') {
-    start.setDate(start.getDate() - 1);
-    end.setDate(end.getDate() - 1);
-  }
-  if (range === 'thisWeek') {
-    start.setDate(start.getDate() - mondayOffset);
-    end.setTime(start.getTime());
-    end.setDate(start.getDate() + 6);
-  }
-  if (range === 'lastWeek') {
-    start.setDate(start.getDate() - mondayOffset - 7);
-    end.setTime(start.getTime());
-    end.setDate(start.getDate() + 6);
-  }
-  if (range === 'thisMonth') {
-    start.setDate(1);
-    end.setMonth(start.getMonth() + 1, 0);
-  }
-  if (range === 'lastMonth') {
-    start.setMonth(start.getMonth() - 1, 1);
-    end.setFullYear(start.getFullYear(), start.getMonth() + 1, 0);
-  }
-
-  return { start: formatDateInput(start), end: formatDateInput(end) };
-};
-
-const setDashboardRange = (range) => {
-  const dates = getQuickDateRange(range);
-  el('startDate').value = dates.start;
-  el('endDate').value = dates.end;
-};
-
-const clearAllFilters = () => {
-  el('quickDateRange').value = '';
-  el('startDate').value = '';
-  el('endDate').value = '';
-  el('cdrStart').value = '';
-  el('cdrEnd').value = '';
-  el('agentFilter').value = '';
-  el('cdrStatus').value = '';
-  el('cdrSearch').value = '';
-  cdrState.hour = '';
-  cdrState.page = 1;
 };
 
 const loadLicenseStatus = async () => {
@@ -265,23 +165,16 @@ const applyRoleVisibility = () => {
 };
 
 const loadDashboard = async () => {
-  updateChartTitles();
   const response = await api(`/stats?${queryFromRange().toString()}`);
   const stats = (await response.json()).data;
-  const statusTotals = Object.fromEntries(STATUS_ORDER.map((key) => [key, 0]));
-  stats.statusDistribution.forEach((item) => {
-    const key = statusKey(item.status);
-    if (STATUS_MAP[key]) statusTotals[key] += Number(item.total || 0);
-  });
-
   el('totalCalls').textContent = stats.totalCalls;
   el('avgDuration').textContent = formatDuration(stats.averageDuration);
-  el('answeredMissed').textContent = `${statusTotals.ANSWERED} / ${statusTotals['NO ANSWER']}`;
+  el('answeredMissed').textContent = `${stats.answeredCalls} / ${stats.missedCalls}`;
   el('topAgent').textContent = stats.topAgent;
 
-  drawChart('callsPerDayChart', { type: 'line', labels: stats.callsPerDay.map((x) => formatDateLabel(x.day)), values: stats.callsPerDay.map((x) => x.total), color: '#3b82f6', onClick: (idx) => chartClickFilter('day', stats.callsPerDay[idx].day) });
+  drawChart('callsPerDayChart', { type: 'line', labels: stats.callsPerDay.map((x) => x.day), values: stats.callsPerDay.map((x) => x.total), color: '#3b82f6', onClick: (idx) => chartClickFilter('day', stats.callsPerDay[idx].day) });
   drawChart('callsPerAgentChart', { type: 'bar', labels: stats.callsPerAgent.map((x) => x.agent), values: stats.callsPerAgent.map((x) => x.total), color: '#10b981', onClick: (idx) => chartClickFilter('agent', stats.callsPerAgent[idx].agent) });
-  drawChart('statusChart', { type: 'pie', labels: STATUS_ORDER.map((key) => STATUS_MAP[key]), values: STATUS_ORDER.map((key) => statusTotals[key]), color: STATUS_ORDER.map((key) => STATUS_COLORS[key]), onClick: (idx) => chartClickFilter('status', STATUS_ORDER[idx]) });
+  drawChart('statusChart', { type: 'pie', labels: stats.statusDistribution.map((x) => statusMap[x.status] || x.status), values: stats.statusDistribution.map((x) => x.total), color: ['#3b82f6', '#f59e0b', '#ef4444'], onClick: (idx) => chartClickFilter('status', stats.statusDistribution[idx].status) });
   drawChart('hourChart', { type: 'bar', labels: stats.callsByHour.map((x) => `${x.hour}:00`), values: stats.callsByHour.map((x) => x.total), color: '#8b5cf6', onClick: (idx) => chartClickFilter('hour', Number(stats.callsByHour[idx].hour)) });
 };
 
@@ -301,7 +194,7 @@ const cdrQuery = () => {
 const loadCdr = async () => {
   const response = await api(`/cdr?${cdrQuery().toString()}`);
   const payload = (await response.json()).data;
-  el('cdrTable').querySelector('tbody').innerHTML = payload.items.map((row) => `<tr><td>${new Date(row.call_date).toLocaleString('es-ES')}</td><td>${row.source}</td><td>${row.destination}</td><td>${formatDuration((row.billsec > 0 ? row.billsec : row.duration))}</td><td>${statusLabel(row.status)}</td><td>${row.agent || '-'}</td></tr>`).join('');
+  el('cdrTable').querySelector('tbody').innerHTML = payload.items.map((row) => `<tr><td>${new Date(row.call_date).toLocaleString('es-ES')}</td><td>${row.source}</td><td>${row.destination}</td><td>${formatDuration((row.billsec > 0 ? row.billsec : row.duration))}</td><td>${statusMap[row.status] || row.status}</td><td>${row.agent || '-'}</td></tr>`).join('');
   el('cdrPageInfo').textContent = `Página ${payload.page} / ${Math.max(1, Math.ceil(payload.total / payload.limit))}`;
 };
 
@@ -374,7 +267,13 @@ const applyCdrFilters = () => {
 };
 
 const clearFilters = () => {
-  clearAllFilters();
+  el('cdrStart').value = '';
+  el('cdrEnd').value = '';
+  el('agentFilter').value = '';
+  el('cdrStatus').value = '';
+  el('cdrSearch').value = '';
+  cdrState.hour = '';
+  cdrState.page = 1;
   Promise.all([loadDashboard(), loadCdr()]).catch((error) => notify(error.message, true));
 };
 
@@ -397,19 +296,11 @@ const initEvents = () => {
   });
   el('toggleSidebar').addEventListener('click', () => el('sidebar').classList.toggle('collapsed'));
 
-  document.querySelectorAll('.menu-item').forEach((item) => item.addEventListener('click', () => { openSection(item.dataset.section); if (item.dataset.section === 'dashboard') loadDashboard(); }));
-  document.querySelector('.sidebar-brand')?.addEventListener('click', () => { openSection('dashboard'); loadDashboard(); });
+  document.querySelectorAll('.menu-item').forEach((item) => item.addEventListener('click', () => { openSection(item.dataset.section); if (item.dataset.section === 'dashboard') { setDefaultDateRange(); loadDashboard(); }}));
+  document.querySelector('.sidebar-brand')?.addEventListener('click', () => { openSection('dashboard'); setDefaultDateRange(); loadDashboard(); clearFilters(); });
 
-  el('quickDateRange').addEventListener('change', (event) => {
-    if (!event.target.value) return;
-    setDashboardRange(event.target.value);
-    loadDashboard().catch((error) => notify(error.message, true));
-  });
-  ['startDate', 'endDate'].forEach((id) => el(id).addEventListener('change', () => {
-    el('quickDateRange').value = '';
-  }));
   el('refreshDashboard').addEventListener('click', loadDashboard);
-  el('clearDashboardFiltersBtn').addEventListener('click', clearFilters);
+  el('clearDashboardFiltersBtn').addEventListener('click', () => { setDefaultDateRange(); loadDashboard(); });
   el('importCdrBtn').addEventListener('click', () => {
     notify('Importación en proceso');
     api('/ucm/import', { method: 'POST' }).then(() => pollImportStatus()).catch((error) => notify(error.message, true));
