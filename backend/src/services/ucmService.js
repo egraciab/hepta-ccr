@@ -11,17 +11,10 @@ let importStatus = { running: false, startedAt: null, finishedAt: null, received
 let lastFieldStats = { detectedFields: [], fieldCounts: {}, sampleRecord: null };
 
 const dispositionMap = {
-  ANSWERED: 'ANSWERED',
-  'NO ANSWER': 'NO ANSWER',
-  FAILED: 'FAILED',
-  BUSY: 'BUSY',
-  CONTESTADA: 'ANSWERED',
-  CONTESTADAS: 'ANSWERED',
-  PERDIDA: 'NO ANSWER',
-  PERDIDAS: 'NO ANSWER',
-  FALLIDA: 'FAILED',
-  FALLIDAS: 'FAILED',
-  OCUPADO: 'BUSY',
+  ANSWERED: 'contestada',
+  'NO ANSWER': 'perdida',
+  FAILED: 'fallida',
+  BUSY: 'ocupado',
 };
 
 const nullIfEmpty = (value) => {
@@ -146,8 +139,8 @@ const fetchCDR = async (baseUrl, cookie, options = {}) => {
       format: 'json',
       numRecords: options.numRecords || 500,
       offset: options.offset || 0,
-      start_date: options.startTime ? options.startTime.split(' ')[0] : undefined,
-      end_date: options.endTime ? options.endTime.split(' ')[0] : undefined,
+      start_date: options.startTime?.split(' ')[0],
+      end_date: options.endTime?.split(' ')[0],
     },
   });
 

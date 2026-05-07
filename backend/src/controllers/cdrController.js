@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
 const cdrService = require('../services/cdrService');
@@ -10,7 +8,6 @@ const parseFilters = (query) => ({
   endDate: query.endDate,
   agent: query.agent,
   disposition: query.disposition,
-  direction: query.direction,
   hour: query.hour,
   q: query.q,
   page: query.page,
@@ -19,46 +16,7 @@ const parseFilters = (query) => ({
   sortOrder: query.sortOrder,
 });
 
-const STATUS_MAP = {
-  ANSWERED: 'Contestada',
-  FAILED: 'Fallida',
-  'NO ANSWER': 'Perdida',
-  BUSY: 'Ocupado',
-};
-const STATUS_ALIASES = { contestada: 'ANSWERED', contestadas: 'ANSWERED', perdida: 'NO ANSWER', perdidas: 'NO ANSWER', fallida: 'FAILED', fallidas: 'FAILED', ocupado: 'BUSY' };
-const statusKey = (status) => {
-  const raw = String(status || '').trim();
-  const upper = raw.toUpperCase();
-  return STATUS_MAP[upper] ? upper : STATUS_ALIASES[raw.toLowerCase()] || upper;
-};
-const statusLabel = (status) => STATUS_MAP[statusKey(status)] || status || '';
-const directionLabel = (direction) => ({ incoming: 'Entrante', outgoing: 'Saliente' }[direction] || 'No determinada');
-
-const csvEscape = (value) => {
-  const text = String(value ?? '');
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-};
-
-const watermarkCandidates = [
-  process.env.PDF_WATERMARK_LOGO,
-  path.resolve(process.cwd(), 'assets/logo.png'),
-  path.resolve(process.cwd(), '../frontend/assets/logo.png'),
-  path.resolve(__dirname, '../../../frontend/assets/logo.png'),
-].filter(Boolean);
-
-const findWatermarkLogo = () => watermarkCandidates.find((candidate) => fs.existsSync(candidate));
-
-const drawWatermark = (doc) => {
-  const logoPath = findWatermarkLogo();
-  if (!logoPath) return;
-  const width = Math.min(260, doc.page.width * 0.46);
-  const x = (doc.page.width - width) / 2;
-  const y = (doc.page.height - width) / 2;
-  doc.save();
-  doc.opacity(0.08);
-  doc.image(logoPath, x, y, { width });
-  doc.restore();
-};
+const statusLabel = { contestada: 'Contestadas', perdida: 'Perdidas', fallida: 'Fallidas', ocupado: 'Ocupado' };
 
 
 const fields = async (_req, res, next) => {
@@ -124,8 +82,8 @@ const getExportRows = async (query) => {
 const exportCsv = async (req, res, next) => {
   try {
     const rows = await getExportRows(req.query);
-    const header = 'call_date,source,destination,duration,status,direction,agent';
-    const lines = rows.map((row) => [row.call_date.toISOString(), row.source, row.destination, row.duration, statusLabel(row.status), directionLabel(row.direction), row.agent].map(csvEscape).join(','));
+    const header = 'call_date,source,destination,duration,status,agent';
+    const lines = rows.map((row) => [row.call_date.toISOString(), row.source, row.destination, row.duration, row.status, row.agent].join(','));
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="cdr_export.csv"');
@@ -143,8 +101,7 @@ const exportXlsx = async (req, res, next) => {
       origen: row.source,
       destino: row.destination,
       duracion: row.duration,
-      estado: statusLabel(row.status),
-      direccion: directionLabel(row.direction),
+      estado: statusLabel[row.status] || row.status,
       agente: row.agent,
     }));
 
@@ -173,20 +130,18 @@ const exportPdf = async (req, res, next) => {
     doc.pipe(res);
 
     const rangeLabel = `Rango: ${filters.startDate || 'inicio'} - ${filters.endDate || 'fin'}`;
-    drawWatermark(doc);
     doc.fontSize(18).fillColor('#111827').text('Reporte de Llamadas', { align: 'center' });
     doc.moveDown(0.3);
     doc.fontSize(9).fillColor('#4b5563').text(rangeLabel, { align: 'center' });
     doc.moveDown(1);
 
     const columns = [
-      { label: 'Fecha', x: 36, width: 100 },
-      { label: 'Origen', x: 136, width: 62 },
-      { label: 'Destino', x: 198, width: 62 },
-      { label: 'Duración', x: 260, width: 58 },
-      { label: 'Estado', x: 318, width: 74 },
-      { label: 'Dirección', x: 392, width: 70 },
-      { label: 'Agente', x: 462, width: 96 },
+      { label: 'Fecha', x: 36, width: 112 },
+      { label: 'Origen', x: 148, width: 70 },
+      { label: 'Destino', x: 218, width: 70 },
+      { label: 'Duración', x: 288, width: 62 },
+      { label: 'Estado', x: 350, width: 82 },
+      { label: 'Agente', x: 432, width: 126 },
     ];
     const rowHeight = 20;
 
@@ -202,7 +157,6 @@ const exportPdf = async (req, res, next) => {
     const drawRow = (row) => {
       if (doc.y + rowHeight > doc.page.height - 36) {
         doc.addPage();
-        drawWatermark(doc);
         drawHeader();
       }
       const y = doc.y;
@@ -213,8 +167,7 @@ const exportPdf = async (req, res, next) => {
         row.source || '',
         row.destination || '',
         `${row.billsec > 0 ? row.billsec : row.duration || 0}s`,
-        statusLabel(row.status),
-        directionLabel(row.direction),
+        statusLabel[row.status] || row.status || '',
         row.agent || '-',
       ];
       columns.forEach((column, index) => doc.text(String(values[index]), column.x + 4, y + 6, { width: column.width - 8, align: index === 3 ? 'right' : 'left' }));

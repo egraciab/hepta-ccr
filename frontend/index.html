@@ -44,26 +44,10 @@
           </header>
 
           <section id="dashboardSection" class="app-section">
-            <div class="row g-3 mb-3 align-items-end">
-              <div class="col-md-3">
-                <label for="quickDateRange" class="form-label mb-1">Rango de fechas</label>
-                <select id="quickDateRange" class="form-select mb-2">
-                  <option value="">Seleccionar rango</option>
-                  <option value="today">Hoy</option>
-                  <option value="yesterday">Ayer</option>
-                  <option value="thisWeek">Esta semana</option>
-                  <option value="lastWeek">Última semana</option>
-                  <option value="thisMonth">Este mes</option>
-                  <option value="lastMonth">Último mes</option>
-                </select>
-                <div class="d-flex gap-2"><input type="date" id="startDate" class="form-control" /><input type="date" id="endDate" class="form-control" /></div>
-              </div>
-              <div class="col-md-2"><label for="dashboardAgentFilter" class="form-label mb-1">Agente</label><select id="dashboardAgentFilter" class="form-select"><option value="">Todos</option></select></div>
-              <div class="col-md-2"><label for="dashboardStatusFilter" class="form-label mb-1">Estado</label><select id="dashboardStatusFilter" class="form-select"><option value="">Todos</option><option value="ANSWERED">Contestada</option><option value="NO ANSWER">Perdida</option><option value="FAILED">Fallida</option><option value="BUSY">Ocupado</option></select></div>
-              <div class="col-md-2"><label for="dashboardDirectionFilter" class="form-label mb-1">Dirección</label><select id="dashboardDirectionFilter" class="form-select"><option value="">Todos</option><option value="incoming">Entrante</option><option value="outgoing">Saliente</option></select></div>
+            <div class="row g-3 mb-3">
+              <div class="col-md-3"><input type="date" id="startDate" class="form-control" /></div>
+              <div class="col-md-3"><input type="date" id="endDate" class="form-control" /></div>
               <div class="col-md-3 d-flex gap-2"><button id="refreshDashboard" class="btn btn-primary w-100">Actualizar Panel</button><button id="clearDashboardFiltersBtn" class="btn btn-outline-secondary w-100">Limpiar filtros</button></div>
-            </div>
-            <div class="row g-3 mb-3 align-items-center">
               <div class="col-md-3 d-flex gap-2" data-admin-only="true">
                 <button id="importCdrBtn" class="btn btn-outline-primary w-100">Importar CDR</button>
                 <div class="form-check form-switch d-flex align-items-center ms-2">
@@ -73,31 +57,30 @@
               </div>
             </div>
             <div class="row g-3 mb-3">
-              <div class="col-md-6 col-xl-2"><div class="card app-card shadow-soft h-100"><div class="card-body"><small>Total de Llamadas</small><h3 id="totalCalls">0</h3></div></div></div>
-              <div class="col-md-6 col-xl-2"><div class="card app-card shadow-soft h-100"><div class="card-body"><small>Duración Promedio</small><h3 id="avgDuration">0</h3></div></div></div>
-              <div class="col-md-6 col-xl-2"><div class="card app-card shadow-soft h-100"><div class="card-body"><small>Contestadas / Perdidas</small><h3 id="answeredMissed">0 / 0</h3></div></div></div>
-              <div class="col-md-6 col-xl-2"><div class="card app-card shadow-soft h-100"><div class="card-body"><small>Llamadas Entrantes</small><h3 id="incomingCalls">0</h3><small id="incomingPct" class="text-muted">0%</small></div></div></div>
-              <div class="col-md-6 col-xl-2"><div class="card app-card shadow-soft h-100"><div class="card-body"><small>Llamadas Salientes</small><h3 id="outgoingCalls">0</h3><small id="outgoingPct" class="text-muted">0%</small></div></div></div>
-              <div class="col-md-6 col-xl-2"><div class="card app-card shadow-soft h-100"><div class="card-body"><small>Agente Destacado</small><h3 id="topAgent">-</h3></div></div></div>
+              <div class="col-md-6 col-lg-3"><div class="card app-card shadow-soft"><div class="card-body"><small>Total de Llamadas</small><h3 id="totalCalls">0</h3></div></div></div>
+              <div class="col-md-6 col-lg-3"><div class="card app-card shadow-soft"><div class="card-body"><small>Duración Promedio</small><h3 id="avgDuration">0</h3></div></div></div>
+              <div class="col-md-6 col-lg-3"><div class="card app-card shadow-soft"><div class="card-body"><small>Contestadas / Perdidas</small><h3 id="answeredMissed">0 / 0</h3></div></div></div>
+              <div class="col-md-6 col-lg-3"><div class="card app-card shadow-soft"><div class="card-body"><small>Agente Destacado</small><h3 id="topAgent">-</h3></div></div></div>
             </div>
             <div class="row g-3">
-              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header" id="callsPerDayTitle">Llamadas por día</div><div class="card-body"><canvas id="callsPerDayChart"></canvas></div></div></div>
-              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header" id="callsPerAgentTitle">Llamadas por agente</div><div class="card-body"><canvas id="callsPerAgentChart"></canvas></div></div></div>
-              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header" id="statusChartTitle">Distribución de estado</div><div class="card-body"><canvas id="statusChart"></canvas></div></div></div>
-              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header" id="hourChartTitle">Llamadas por hora</div><div class="card-body"><canvas id="hourChart"></canvas></div></div></div>
+              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header">Llamadas por día</div><div class="card-body"><canvas id="callsPerDayChart"></canvas></div></div></div>
+              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header">Llamadas por agente</div><div class="card-body"><canvas id="callsPerAgentChart"></canvas></div></div></div>
+              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header">Distribución de estado</div><div class="card-body"><canvas id="statusChart"></canvas></div></div></div>
+              <div class="col-lg-6"><div class="card app-card shadow-soft"><div class="card-header">Llamadas por hora</div><div class="card-body"><canvas id="hourChart"></canvas></div></div></div>
             </div>
           </section>
 
           <section id="cdrSection" class="app-section d-none">
             <div class="card app-card shadow-soft"><div class="card-body">
-              <div class="row g-2 mb-3 align-items-end">
-                <div class="col-md-3"><label class="form-label mb-1">Rango de fechas</label><div class="d-flex gap-2"><input type="date" id="cdrStart" class="form-control" /><input type="date" id="cdrEnd" class="form-control" /></div></div>
-                <div class="col-md-2"><label for="agentFilter" class="form-label mb-1">Agente</label><select id="agentFilter" class="form-select"><option value="">Todos</option></select></div>
-                <div class="col-md-2"><label for="cdrStatus" class="form-label mb-1">Estado</label><select id="cdrStatus" class="form-select"><option value="">Todos</option><option value="ANSWERED">Contestada</option><option value="NO ANSWER">Perdida</option><option value="FAILED">Fallida</option><option value="BUSY">Ocupado</option></select></div>
-                <div class="col-md-2"><label for="cdrDirection" class="form-label mb-1">Dirección</label><select id="cdrDirection" class="form-select"><option value="">Todos</option><option value="incoming">Entrante</option><option value="outgoing">Saliente</option></select></div>
-                <div class="col-md-3"><label for="cdrSearch" class="form-label mb-1">Buscar</label><div class="d-flex gap-2"><input type="text" id="cdrSearch" class="form-control" placeholder="Buscar" /><button id="clearFiltersBtn" class="btn btn-outline-secondary">Limpiar</button><button id="exportCsvBtn" class="btn btn-success">CSV</button><button id="exportXlsxBtn" class="btn btn-success">XLSX</button><button id="exportPdfBtn" class="btn btn-danger">PDF</button></div></div>
+              <div class="row g-2 mb-3">
+                <div class="col-md-2"><input type="date" id="cdrStart" class="form-control" /></div>
+                <div class="col-md-2"><input type="date" id="cdrEnd" class="form-control" /></div>
+                <div class="col-md-2"><select id="agentFilter" class="form-select"><option value="">Todos</option></select></div>
+                <div class="col-md-2"><select id="cdrStatus" class="form-select"><option value="">Todos</option><option value="contestada">Contestadas</option><option value="perdida">Perdidas</option><option value="fallida">Fallidas</option><option value="ocupado">Ocupado</option></select></div>
+                <div class="col-md-2"><input type="text" id="cdrSearch" class="form-control" placeholder="Buscar" /></div>
+                <div class="col-md-2 d-flex gap-2"><button id="clearFiltersBtn" class="btn btn-outline-secondary w-100">Limpiar</button><button id="exportCsvBtn" class="btn btn-success">CSV</button><button id="exportXlsxBtn" class="btn btn-success">XLSX</button><button id="exportPdfBtn" class="btn btn-danger">PDF</button></div>
               </div>
-              <div class="table-responsive"><table class="table table-hover" id="cdrTable"><thead><tr><th data-sort="call_date">Fecha</th><th data-sort="source">Origen</th><th data-sort="destination">Destino</th><th data-sort="duration">Duración</th><th data-sort="status">Estado</th><th>Dirección</th><th data-sort="agent">Agente</th></tr></thead><tbody></tbody></table></div>
+              <div class="table-responsive"><table class="table table-hover" id="cdrTable"><thead><tr><th data-sort="call_date">Fecha</th><th data-sort="source">Origen</th><th data-sort="destination">Destino</th><th data-sort="duration">Duración</th><th data-sort="status">Estado</th><th data-sort="agent">Agente</th></tr></thead><tbody></tbody></table></div>
               <div class="d-flex justify-content-between"><button id="prevPage" class="btn btn-outline-secondary btn-sm">Anterior</button><span id="cdrPageInfo">Página 1</span><button id="nextPage" class="btn btn-outline-secondary btn-sm">Siguiente</button></div>
             </div></div>
           </section>
