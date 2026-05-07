@@ -1,4 +1,4 @@
-const API_BASE = 'http://10.10.20.232:3000/api';
+const API_BASE = '/api';
 
 let token = localStorage.getItem('token') || '';
 let currentUser = null;
