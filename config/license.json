@@ -1,0 +1,11 @@
+{
+  "client": "Ideas & Negocios S.A.",
+  "type": "perpetual",
+  "issued_at": "2026-05-10",
+  "support_until": "2027-05-10",
+  "machine_id": "auto",
+  "features": [
+    "full"
+  ],
+  "signature": "33b98f48619d8dfebcd8d99ffe94fa11093b37aa256c2295b51c6298c2855372"
+}
